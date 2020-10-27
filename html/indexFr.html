@@ -4,13 +4,13 @@
   <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js" integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
-  <title>Speech Recognition in browser</title>
+  <title>Reconnaisance vocale dans le navigateur</title>
   <script>
   const WIDTH=800;
   const HEIGHT=100;
-  const enDic = ['down', 'go', 'left', 'no', 'right', 'stop', 'up', 'yes'];
+  const frDic = ['bonjour', 'salut', 'merci', 'aurevoir'];
   let spectroOffset = 0;
-  let modelEn = null;
+  let modelFr = null;
   let captureStream = null;
   let source = null;
   let analyser = null;
@@ -34,12 +34,12 @@
 
   async function loadModel()
   {
-    modelEn = await tf.loadGraphModel('http://localhost:3000/quantized_model_en/model.json');
+    modelFr = await tf.loadGraphModel('http://localhost:3000/quantized_model_fr/model.json');
   }
   async function predictWord()
   {
     console.log("buffer:", buffer);
-    let newBufferEn = [];
+    let newBufferFr = [];
     for(i=buffer.length;i>0;)
     {
       let newBlock = [];
@@ -54,20 +54,20 @@
         }
       }
 
-      if(newBufferEn.length>=57) {break;}
-      newBufferEn.unshift(newBlock);
+      if(newBufferFr.length>=39) {break;}
+      newBufferFr.unshift(newBlock);
       i-=blockSize/2;
     }
-    let tensorEn = tf.tensor(newBufferEn).expandDims(-1);
-    tensorEn = tf.where(tf.isInf(tensorEn), tf.zerosLike(tensorEn), tensorEn);
-    let predictionEn = await modelEn.executeAsync(tensorEn.expandDims(0));
-    predictionEn = predictionEn.squeeze();
-    const predictionArrayEn = await predictionEn.array();
-    const wordEn = await predictionEn.argMax(-1).array();
-    console.log(predictionArrayEn, wordEn, predictionArrayEn[wordEn], enDic[wordEn]);
-    if(predictionArrayEn[wordEn]>0.6)
+    let tensorFr = tf.tensor(newBufferFr).expandDims(-1);
+    tensorFr = tf.where(tf.isInf(tensorFr), tf.zerosLike(tensorFr), tensorFr);
+    let predictionFr = await modelFr.executeAsync(tensorFr.expandDims(0));
+    predictionFr = predictionFr.squeeze();
+    const predictionArrayFr = await predictionFr.array();
+    const wordFr = await predictionFr.argMax(-1).array();
+    console.log(predictionArrayFr, wordFr, predictionArrayFr[wordFr], frDic[wordFr]);
+    if(predictionArrayFr[wordFr]>0.6)
     {
-      $('#recognitionResult').append($('<p></p>').html("en: " + enDic[wordEn] + " " + predictionArrayEn[wordEn]));
+      $('#recognitionResult').append($('<p></p>').html("fr: " + frDic[wordFr] + " " + predictionArrayFr[wordFr]));
     }
   }
   function catchData()
@@ -90,7 +90,7 @@
     silenceCount=0;
     arrayData.push(arrayData[arrayData.length-1]);
     buffer.push(arrayData);
-    if(buffer.length>(maxLength*blockSize/2-1)/4&&(timeFromLastReco>10))
+    if(buffer.length>(maxLength*blockSize/2-1)/3&&(timeFromLastReco>10))
     {
       timeFromLastReco=0;
       buffer.shift();
@@ -250,19 +250,19 @@
 <body>
   <div class="container">
     <div class="jumbotron">
-      <h1>Speech Recognition in browser</h1>
+      <h1>Reconnaisance vocale dans le navigateur</h1>
       <div class="align-center">
-        <a id="startAudioCapture" class="btn btn-primary">Share mic</a>
-        <a id="stopAudioCapture" class="btn btn-primary">Stop mic</a>
-        <a class="fileToWord btn btn-primary" file="clips/00f0204f_nohash_0.wav" sr="16000">File to word (down)</a>
-        <a class="fileToWord btn btn-primary" file="clips/0b40aa8e_nohash_0.wav" sr="16000">File to word (yes)</a>
-        <a class="fileToWord btn btn-primary" file="clips/1c6e5447_nohash_0.wav" sr="16000">File to word (no)</a>
-        <a class="fileToWord btn btn-primary" file="clips/2a89ad5c_nohash_0.wav" sr="16000">File to word (left)</a>
+        <a id="startAudioCapture" class="btn btn-primary">Partager le micro</a>
+        <a id="stopAudioCapture" class="btn btn-primary">Arrêter le micro</a>
+        <a class="fileToWord btn btn-primary" file="clipsFr/bonjour-01.wav" sr="44100">Bonjour</a>
+        <a class="fileToWord btn btn-primary" file="clipsFr/aurevoir-01.wav" sr="44100">Aurevoir</a>
+        <a class="fileToWord btn btn-primary" file="clipsFr/merci-01.wav" sr="44100">Merci</a>
+        <a class="fileToWord btn btn-primary" file="clipsFr/salut-01.wav" sr="44100">Salut</a>
       </div>
       <hr>
       <canvas id="oscilo" width="800" height="100"></canvas>
       <canvas id="spectrogram" width="1024" height="400"></canvas>
-      <h2>Recognition results</h2>
+      <h2>Résultats</h2>
       <p id="recognitionResult"></p>
     </div>
   </div>
