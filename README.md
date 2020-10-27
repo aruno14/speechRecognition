@@ -17,6 +17,9 @@ Simple LSTM model to convert audio into word. It uses **Speech command Dataset**
 #### test_wordsFr.py
 Simple LSTM model to convert audio into French word. It uses **a self-made Dataset** included in this repository.
 
+### test_voice.py
+Read audio input data from mic and predict word in real time.
+
 ### server_express.js
 Simple WebServer in NodeJS.
 
@@ -38,5 +41,5 @@ Model can recognize: `['bonjour', 'salut', 'merci', 'aurevoir']`
 
 Below command has been used to convert model to TensorFlow.js:
 ```
-~/.local/bin/tensorflowjs_converter model_reco/ quantized_model/ --input_format tf_saved_model --output_format tfjs_graph_model --quantize_uint8
+~/.local/bin/tensorflowjs_converter model_reco/ quantized_model/ --input_format tf_saved_model --output_format tfjs_graph_model --quantize_float16
 ```
