@@ -13,3 +13,13 @@ Seq2Seq model to translate sentence in same language as the input. It uses Mozil
 
 ### test_words.py
 Simple LSTM model to convert audio into word. It uses **Speech command Dataset**: https://aiyprojects.withgoogle.com/open_speech_recording
+
+
+### server_express.js
+Simple WebServer in NodeJS.
+
+### convert_mp3towav.sh
+Convert all `mp3` files of current folder in `wav`.
+
+### sentence_fr.py
+Seq2Seq model to convert audio sentence in text. It uses Mozilla Common Voice French dataset.
