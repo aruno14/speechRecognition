@@ -38,7 +38,7 @@ def audioToTensor(filepath):
         parts[i] = part
     return parts
 
-max_data = 200
+max_data = 999
 wordToId, idToWord = {}, {}
 testParts = audioToTensor('mini_speech_commands/go/0a9f9af7_nohash_0.wav')
 print(testParts.shape)
@@ -48,6 +48,7 @@ files = {}
 for i, word in enumerate(words):
     wordToId[word], idToWord[i] = i, word
     files[word] = glob.glob('mini_speech_commands/'+word+'/*.wav')
+
 for nb in range(0, max_data):
     for i, word in enumerate(words):
         audio = audioToTensor(files[word][nb])
@@ -60,6 +61,7 @@ print("X_audio.shape: ", X_audio.shape)
 print("Y_word.shape: ", Y_word.shape)
 print("X_audio_test.shape: ", X_audio_test.shape)
 print("Y_word_test.shape: ", Y_word_test.shape)
+
 latent_dim=32
 encoder_inputs = Input(shape=(testParts.shape[0], None, None, 1))
 preprocessing = TimeDistributed(preprocessing.Resizing(6, 129))(encoder_inputs)
@@ -74,17 +76,18 @@ decoder_dense = Dense(len(words), activation='softmax')(encoder_lstm)
 model = Model(encoder_inputs, decoder_dense)
 model.compile(optimizer=tf.keras.optimizers.Adam(), loss='categorical_crossentropy', metrics=['acc'])
 model.summary(line_length=200)
-tf.keras.utils.plot_model(model, to_file='model_word.png', show_shapes=True)
+tf.keras.utils.plot_model(model, to_file='model_words.png', show_shapes=True)
+
 batch_size = 32
-epochs = 25
+epochs = 100
 history=model.fit(X_audio, Y_word, shuffle=False, batch_size=batch_size, epochs=epochs, steps_per_epoch=len(X_audio)//batch_size, validation_data=(X_audio_test, Y_word_test))
-model.save_weights('model_word.h5')
-model.save("model_word")
+model.save_weights('model_words.h5')
+model.save("model_words")
 metrics = history.history
 
 plt.plot(history.epoch, metrics['loss'], metrics['acc'])
 plt.legend(['loss', 'acc'])
-plt.savefig("learning-word.png")
+plt.savefig("learning-words.png")
 plt.show()
 plt.close()
 
