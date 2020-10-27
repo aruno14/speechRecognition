@@ -23,3 +23,13 @@ Convert all `mp3` files of current folder in `wav`.
 
 ### sentence_fr.py
 Seq2Seq model to convert audio sentence in text. It uses Mozilla Common Voice French dataset.
+
+## HTML pages
+In order to avoid CORS probleme, we use a local WebServer. You can use `python3 -m http.server 3000` or `node server_express.js` and access http://localhost:3000.
+
+Model can recognize: `['down', 'go', 'left', 'no', 'right', 'stop', 'up', 'yes']`
+
+
+In addition to English, there is also a French test page http://localhost:3000/indexFr.html.
+
+Model can recognize: `['bonjour', 'salut', 'merci', 'aurevoir']`
