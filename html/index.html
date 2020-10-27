@@ -1,0 +1,271 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js" integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs/dist/tf.min.js"></script>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
+  <title>Speech Recognition in browser</title>
+  <script>
+  const WIDTH=800;
+  const HEIGHT=100;
+  const enDic = ['down', 'go', 'left', 'no', 'right', 'stop', 'up', 'yes'];
+  let spectroOffset = 0;
+  let modelEn = null;
+  let captureStream = null;
+  let source = null;
+  let analyser = null;
+  let audioCtx = null;
+  let stop = true;
+  const blockSize = 6;
+  const maxLength = 39*6;
+  let silenceCount = 0;
+  let buffer = [];
+  let interval = null;
+  let timeFromLastReco = 100;
+
+  function fillBuffer()
+  {
+    buffer=[];
+    for(i=0;i<150;i++)
+    {
+      buffer.push(new Array(513).fill(0));
+    }
+  }
+
+  async function loadModel()
+  {
+    modelEn = await tf.loadGraphModel('http://localhost:3000/quantized_model_en/model.json');
+  }
+  async function predictWord()
+  {
+    console.log("buffer:", buffer);
+    let newBufferEn = [];
+    for(i=buffer.length;i>0;)
+    {
+      let newBlock = [];
+      for(j=0;j<blockSize;j++)
+      {
+        if(buffer[i-1-j])
+        {
+          newBlock.unshift(buffer[i-1-j]);
+        }
+        else {
+          newBlock.unshift(new Array(513).fill(0));
+        }
+      }
+
+      if(newBufferEn.length>=57) {break;}
+      newBufferEn.unshift(newBlock);
+      i-=blockSize/2;
+    }
+    let tensorEn = tf.tensor(newBufferEn).expandDims(-1);
+    tensorEn = tf.where(tf.isInf(tensorEn), tf.zerosLike(tensorEn), tensorEn);
+    let predictionEn = await modelEn.executeAsync(tensorEn.expandDims(0));
+    predictionEn = predictionEn.squeeze();
+    const predictionArrayEn = await predictionEn.array();
+    const wordEn = await predictionEn.argMax(-1).array();
+    console.log(predictionArrayEn, wordEn, predictionArrayEn[wordEn], enDic[wordEn]);
+    if(predictionArrayEn[wordEn]>0.6)
+    {
+      $('#recognitionResult').append($('<p></p>').html("en: " + enDic[wordEn] + " " + predictionArrayEn[wordEn]));
+    }
+    return wordEn;
+  }
+  function catchData()
+  {
+    const spectrum = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(spectrum);
+    let arrayData = Array.from(spectrum);
+    timeFromLastReco++;
+    const volume = (arrayData[0] + arrayData[1] + arrayData[2] + arrayData[3])/4;
+    if(volume < -60)
+    {
+      //console.log("Silence skip:", volume);
+      silenceCount++;
+      if(silenceCount>100)
+      {
+        fillBuffer();
+      }
+      return;
+    }
+    silenceCount=0;
+    arrayData.push(arrayData[arrayData.length-1]);
+    buffer.push(arrayData);
+    if(buffer.length>(maxLength*blockSize/2-1)/4&&(timeFromLastReco>10))
+    {
+      timeFromLastReco=0;
+      buffer.shift();
+      predictWord();
+    }
+  }
+  function catchDataFile()
+  {
+    const spectrum = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(spectrum);
+    let arrayData = Array.from(spectrum);
+    const volume = (arrayData[0] + arrayData[1] + arrayData[2] + arrayData[3])/4;
+    arrayData.push(arrayData[arrayData.length-1]);
+    buffer.push(arrayData);
+  }
+  function catchDataRec()
+  {
+    interval = setInterval(function(){ catchData() }, 8);
+  }
+  function catchDataRecFile()
+  {
+    interval = setInterval(function(){ catchDataFile() }, 8);
+  }
+  async function drawSignal()
+  {
+    if(stop) return;
+    let bufferLength = analyser.frequencyBinCount;
+    let dataArray = new Uint8Array(bufferLength);
+    let canvas = document.getElementById('oscilo');
+    let canvasCtx = canvas.getContext('2d');
+    let drawVisual = requestAnimationFrame(drawSignal);
+    analyser.getByteTimeDomainData(dataArray);
+    canvasCtx.fillStyle = 'rgb(200, 200, 200)';
+    canvasCtx.fillRect(0, 0, WIDTH, HEIGHT);
+    canvasCtx.lineWidth = 2;
+    canvasCtx.strokeStyle = 'rgb(0, 0, 0)';
+    canvasCtx.beginPath();
+    let sliceWidth = WIDTH * 1.0 / bufferLength;
+    let x = 0;
+    for(let i = 0; i < bufferLength; i++) {
+      let v = dataArray[i] / 128.0;
+      let y = v * HEIGHT/2;
+      if(i === 0) {
+        canvasCtx.moveTo(x, y);
+      } else {
+        canvasCtx.lineTo(x, y);
+      }
+      x += sliceWidth;
+    }
+    canvasCtx.lineTo(canvas.width, canvas.height/2);
+    canvasCtx.stroke();
+  }
+  async function drawSpect()
+  {
+    if(stop) return;
+    const spectrum = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(spectrum);
+    const spectroCanvas = document.getElementById('spectrogram');
+    const spectroContext = spectroCanvas.getContext('2d');
+    requestAnimationFrame(drawSpect);
+    const slice = spectroContext.getImageData(0, spectroOffset, spectroCanvas.width, 1);
+    for (let i = 0; i < spectrum.length; i++) {
+      slice.data[4 * i + 0] = spectrum[i] // R
+      slice.data[4 * i + 1] = spectrum[i] // G
+      slice.data[4 * i + 2] = spectrum[i] // B
+      slice.data[4 * i + 3] = 255         // A
+    }
+    spectroContext.putImageData(slice, 0, spectroOffset);
+    spectroOffset += 1;
+    spectroOffset %= spectroCanvas.height;
+  }
+  async function startAudioCapture()
+  {
+    console.log("startAudioCapture");
+    stop = false;
+    let constraints = {audio: {channelCount:1, echoCancellation:true, noiseSuppression:true, sampleRate:16000}, video: false};
+    try {
+      captureStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log("captureStream: ", captureStream);
+      console.log("getAudioTracks: ", captureStream.getAudioTracks());
+      const audio_track = captureStream.getAudioTracks()[0];
+      console.log("Use mic: ", audio_track.label);
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      console.log("audioCtx.sampleRate:", audioCtx.sampleRate);
+      analyser = audioCtx.createAnalyser();
+      source = audioCtx.createMediaStreamSource(captureStream);
+      source.connect(analyser);
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0;
+      console.log("frequencyBinCount: ", analyser.frequencyBinCount)
+      drawSignal();
+      drawSpect();
+      catchDataRec();
+    } catch(err) {
+      console.error("Error: " + err);
+    }
+  }
+  $(document).ready(function() {
+    loadModel();
+    fillBuffer();
+    $("#startAudioCapture").click(function() {
+      startAudioCapture();
+    });
+    $(".fileToWord").click(function() {
+      const filename=$(this).attr('file');
+      const sr = $(this).attr('sr');
+      fillBuffer();
+      stop=false;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({"sampleRate":sr});//16000}); 44100
+      source = audioCtx.createBufferSource();
+      analyser = audioCtx.createAnalyser();
+      source.connect(analyser);
+      source.onended = function(){
+        predictWord();
+        clearInterval(interval);
+        source.stop(0);
+        stop=true;
+      };
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0;
+      console.log("frequencyBinCount: ", analyser.frequencyBinCount);
+      let request = new XMLHttpRequest();
+      request.open('GET', filename, true);
+      request.responseType = 'arraybuffer';
+      request.onload = function() {
+        let audioData = request.response;
+        audioCtx.decodeAudioData(audioData, function(buffer) {
+          source.buffer = buffer;
+          source.connect(audioCtx.destination);
+          source.loop = false;
+          console.log(audioCtx.sampleRate);
+          const spectrum = new Uint8Array(analyser.frequencyBinCount);
+          analyser.getByteFrequencyData(spectrum);
+          const spectroCanvas = document.getElementById('spectrogram');
+          console.log(spectrum.length)
+          spectroCanvas.width = spectrum.length;
+          spectroCanvas.height = 200;
+          source.start(0);
+          catchDataRecFile();
+          drawSignal();
+          drawSpect();
+        },
+        function(e){"Error with decoding audio data" + e.err});
+      }
+      request.send();
+    });
+    $("#stopAudioCapture").click(function() {
+      console.log("stopAudioCapture");
+      stop=true;
+      clearInterval(interval);
+      if(audioCtx!=null) audioCtx.close();
+      if(captureStream!=null) captureStream.getAudioTracks().forEach(function(track) {if (track.readyState == 'live') {track.stop();}});
+    });
+  });
+</script>
+</head>
+<body>
+  <div class="container">
+    <div class="jumbotron">
+      <h1>Speech Recognition in browser</h1>
+      <div class="align-center">
+        <a id="startAudioCapture" class="btn btn-primary">Share mic</a>
+        <a id="stopAudioCapture" class="btn btn-primary">Stop mic</a>
+        <a class="fileToWord btn btn-primary" file="clips/00f0204f_nohash_0.wav" sr="16000">File to word (down)</a>
+        <a class="fileToWord btn btn-primary" file="clips/0b40aa8e_nohash_0.wav" sr="16000">File to word (yes)</a>
+        <a class="fileToWord btn btn-primary" file="clips/1c6e5447_nohash_0.wav" sr="16000">File to word (no)</a>
+        <a class="fileToWord btn btn-primary" file="clips/2a89ad5c_nohash_0.wav" sr="16000">File to word (left)</a>
+      </div>
+      <hr>
+      <canvas id="oscilo" width="800" height="100"></canvas>
+      <canvas id="spectrogram" width="1024" height="400"></canvas>
+      <h2>Recognition results</h2>
+      <p id="recognitionResult"></p>
+    </div>
+  </div>
+</body>
+</html>
