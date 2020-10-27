@@ -33,3 +33,8 @@ Model can recognize: `['down', 'go', 'left', 'no', 'right', 'stop', 'up', 'yes']
 In addition to English, there is also a French test page http://localhost:3000/indexFr.html.
 
 Model can recognize: `['bonjour', 'salut', 'merci', 'aurevoir']`
+
+Below command has been used to convert model to TensorFlow.js:
+```
+~/.local/bin/tensorflowjs_converter model_reco/ quantized_model/ --input_format tf_saved_model --output_format tfjs_graph_model --quantize_uint8
+```
