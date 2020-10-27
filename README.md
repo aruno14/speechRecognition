@@ -14,6 +14,8 @@ Seq2Seq model to translate sentence in same language as the input. It uses Mozil
 ### test_words.py
 Simple LSTM model to convert audio into word. It uses **Speech command Dataset**: https://aiyprojects.withgoogle.com/open_speech_recording
 
+#### test_wordsFr.py
+Simple LSTM model to convert audio into French word. It uses **a self-made Dataset** included in this repository.
 
 ### server_express.js
 Simple WebServer in NodeJS.
