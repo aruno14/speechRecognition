@@ -53,7 +53,7 @@ def audioToTensor(filepath):
     return parts
 
 
-testParts = audioToTensor('clips/common_voice_ja_22072759.wav')
+testParts = audioToTensor('clips/common_voice_fr_19598904.wav')
 print(testParts.shape)
 
 def loadDataFromFile(filepath):
@@ -193,9 +193,9 @@ def decode_sequence(input_seq):
     return decoded_sentence
 
 print("Test voice recognition")
-for test_path, test_string in [('clips/common_voice_fr_19598904.mp3', "L'endroit est recouvert de goyaviers et d'acacias non endémiques"), ('clips/common_voice_fr_19598936.mp3', 'La Foire sur la place décrit les début du compositeur à Paris'), ('clips/common_voice_fr_20268897.mp3', 'Quand il revient à Paris, deux ans plus tard, la pépinière a été détruite'), ('clips/common_voice_fr_19999318.mp3', "Peu de chansons de cet album n'ont pas connu de reprises"), ('clips/common_voice_fr_19733071.mp3', 'La série avait été diffusée par la télévision algérienne quelques mois auparavant')]:
+for test_path, test_string in [('clips/common_voice_fr_19598904.wav', "L'endroit est recouvert de goyaviers et d'acacias non endémiques"), ('clips/common_voice_fr_19598936.wav', 'La Foire sur la place décrit les début du compositeur à Paris'), ('clips/common_voice_fr_20268897.wav', 'Quand il revient à Paris, deux ans plus tard, la pépinière a été détruite'), ('clips/common_voice_fr_19999318.wav', "Peu de chansons de cet album n'ont pas connu de reprises"), ('clips/common_voice_fr_19733071.wav', 'La série avait été diffusée par la télévision algérienne quelques mois auparavant')]:
     print("test_string: ", test_string)
-    test_voice = audioToTensor(test_path.replace(".mp3", ".wav"))
+    test_voice = audioToTensor(test_path)
     print(np.array([test_voice]).shape)
     decoded_sentence = decode_sequence(np.array([test_voice]))
     print("decoded_sentence: ", decoded_sentence)
