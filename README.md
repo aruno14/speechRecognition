@@ -1,5 +1,6 @@
 # SpeechRecognition
 Speech recognition system implemented using *TensorFlow*.
+More explanation in Medium article: https://aruno14.medium.com/a-journey-to-speech-recognition-using-tensorflow-1fc1169fef99
 
 ## Files explanation
 ### test_load.py
