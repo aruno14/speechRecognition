@@ -2,6 +2,11 @@
 Speech recognition system implemented using *TensorFlow*.
 More explanation in Medium article: https://aruno14.medium.com/a-journey-to-speech-recognition-using-tensorflow-1fc1169fef99
 
+## Used libraries
+```
+pip install tensorflow tensorflow_io
+```
+
 ## Files explanation
 ### test_load.py
 Load labels file of **Mozilla Common Voice**:  https://commonvoice.mozilla.org/en/datasets
