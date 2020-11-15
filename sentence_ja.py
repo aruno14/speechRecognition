@@ -1,8 +1,9 @@
 import csv
 import io
+import os
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.models import Model, Sequential
+from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.layers import LSTM, Embedding, Input, Dense, BatchNormalization, Conv2D, MaxPooling2D, Dropout, Flatten, TimeDistributed
 from tensorflow.keras.layers.experimental import preprocessing
 from tensorflow.keras.preprocessing.text import Tokenizer
@@ -15,6 +16,7 @@ import MeCab
 wakati = MeCab.Tagger("-Owakati -r /etc/mecabrc")
 
 maxData = 30
+model_name = "model_sentence_ja"
 block_length = 0.050#->500ms
 voice_max_length = int(10/block_length)#->2s
 print("voice_max_length:", voice_max_length)
@@ -37,7 +39,7 @@ def audioToTensor(filepath):
         audio_clean = tf.concat([audio_clean, audio_slice], 0)
 
     if len(audio_clean)<audio_length*voice_max_length:
-        audio = tf.concat([np.zeros([audio_length*voice_max_length-len(audio)]), audio], 0)
+        audio = tf.concat([np.zeros([audio_length*voice_max_length-len(audio_clean)]), audio], 0)
     else:
         audio = audio[-(audio_length*voice_max_length):]
 
@@ -71,7 +73,6 @@ def loadDataFromFile(filepath):
         sentence = row[2].replace("。", "")
         #wordList = ("start " + sentence + " end").split(" ")
         wordList = wakati.parse("start " + sentence + " end").split()
-        sentence = row[2].replace(".", "")
         if(len(wordList)<5):
             continue
         print(row[1], row[2], wordList)
@@ -130,36 +131,40 @@ def word_for_id(integer, tokenizer):
             return word
     return None
 
-latent_dim=64
-encoder_inputs = Input(shape=(testParts.shape[0], None, None, 1))
-preprocessing = TimeDistributed(preprocessing.Resizing(6, 129))(encoder_inputs)
-normalization = TimeDistributed(BatchNormalization())(preprocessing)
-conv2d = TimeDistributed(Conv2D(34, 3, activation='relu'))(normalization)
-conv2d = TimeDistributed(Conv2D(64, 3, activation='relu'))(conv2d)
-maxpool = TimeDistributed(MaxPooling2D())(conv2d)
-dropout = TimeDistributed(Dropout(0.25))(maxpool)
-flatten = TimeDistributed(Flatten())(dropout)
-encoder_lstm = LSTM(units=latent_dim, return_state=True)
-encoder_outputs, state_h, state_c = encoder_lstm(flatten)
-encoder_states = [state_h, state_c]
+if os.path.exists(model_name):
+    print("Load: " + model_name)
+    model = load_model(model_name)
+else:
+    latent_dim=64
+    encoder_inputs = Input(shape=(testParts.shape[0], None, None, 1))
+    preprocessing = TimeDistributed(preprocessing.Resizing(6, 129))(encoder_inputs)
+    normalization = TimeDistributed(BatchNormalization())(preprocessing)
+    conv2d = TimeDistributed(Conv2D(34, 3, activation='relu'))(normalization)
+    conv2d = TimeDistributed(Conv2D(64, 3, activation='relu'))(conv2d)
+    maxpool = TimeDistributed(MaxPooling2D())(conv2d)
+    dropout = TimeDistributed(Dropout(0.25))(maxpool)
+    flatten = TimeDistributed(Flatten())(dropout)
+    encoder_lstm = LSTM(units=latent_dim, return_state=True)
+    encoder_outputs, state_h, state_c = encoder_lstm(flatten)
+    encoder_states = [state_h, state_c]
 
-decoder_inputs = Input(shape=(string_max_lenght-1))
-dec_emb_layer = Embedding(vocab_size, latent_dim)
-dec_emb = dec_emb_layer(decoder_inputs)
-decoder_lstm = LSTM(units=latent_dim, return_sequences=True, return_state=True)
-decoder_outputs, _, _ = decoder_lstm(dec_emb, initial_state=encoder_states)
-decoder_dense = Dense(vocab_size, activation='softmax')
-decoder_outputs = decoder_dense(decoder_outputs)
-model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
-model.summary(line_length=200)
-tf.keras.utils.plot_model(model, to_file='model_sentence.png', show_shapes=True)
-model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])
+    decoder_inputs = Input(shape=(string_max_lenght-1))
+    dec_emb_layer = Embedding(vocab_size, latent_dim)
+    dec_emb = dec_emb_layer(decoder_inputs)
+    decoder_lstm = LSTM(units=latent_dim, return_sequences=True, return_state=True)
+    decoder_outputs, _, _ = decoder_lstm(dec_emb, initial_state=encoder_states)
+    decoder_dense = Dense(vocab_size, activation='softmax')
+    decoder_outputs = decoder_dense(decoder_outputs)
+    model = Model([encoder_inputs, decoder_inputs], decoder_outputs)
+    model.summary()
+    tf.keras.utils.plot_model(model, to_file='model_sentence.png', show_shapes=True)
+    model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])
 
 batch_size = 32
 epochs = 30
 model.fit(MySequence(X_voice, X_string, Y_string, batch_size), epochs=epochs, steps_per_epoch=len(X_string)//batch_size)
-model.save_weights('model_sentence.h5')
-model.save("model_sentence")
+#model.save_weights(model_name+'.h5')
+model.save(model_name)
 
 encoder_model = Model(encoder_inputs, encoder_states)
 encoder_model.summary(line_length=200)
