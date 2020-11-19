@@ -68,9 +68,9 @@ print("X_audio_test.shape: ", X_audio_test.shape)
 print("Y_word_test.shape: ", Y_word_test.shape)
 
 latent_dim=32
-encoder_inputs = Input(shape=(testParts.shape[0], testParts.shape[1], testParts.shape[2], 1))
-#preprocessing = TimeDistributed(preprocessing.Resizing(6, 129))(encoder_inputs)
-normalization = TimeDistributed(BatchNormalization())(encoder_inputs)
+encoder_inputs = Input(shape=(testParts.shape[0], None, None, 1))
+preprocessing = TimeDistributed(preprocessing.Resizing(testParts.shape[1]//2, testParts.shape[2]//2))(encoder_inputs)
+normalization = TimeDistributed(BatchNormalization())(preprocessing)
 conv2d = TimeDistributed(Conv2D(34, 3, activation='relu'))(normalization)
 conv2d = TimeDistributed(Conv2D(64, 3, activation='relu'))(conv2d)
 maxpool = TimeDistributed(MaxPooling2D())(conv2d)
