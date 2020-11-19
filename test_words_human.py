@@ -9,9 +9,9 @@ from tensorflow.keras import layers
 import matplotlib.pyplot as plt
 
 words=['down', 'go', 'left', 'no', 'right', 'stop', 'up', 'yes']
-block_length = 0.500#->500ms
-voice_max_length = int(1/block_length)#->2s
-frame_length = 512
+block_length = 0.100#->50ms
+voice_max_length = int(1/block_length)#->1s
+frame_length = 512#with a SR of 16000 resolution will be 31.25Hz
 fft_size = int(frame_length//2+1)
 print("voice_max_length:", voice_max_length)
 
@@ -22,11 +22,19 @@ def audioToTensor(filepath):
     audio = tf.squeeze(audio, axis=-1)
     audio_lenght = int(audioSR * block_length)#->16000*0.5=8000
     frame_step = int(audioSR * 0.008)#16000*0.008=128
+    #human speech varies between 80 and 260hz (450hz for children)
+    max_freq = audioSR/2#1600/2 = 8000
+    min_freq = (audioSR/(frame_length/2))#16000/(512/2) = 62.5
+    res_freq = (audioSR/frame_length)/2#16000/512 = 31.25
+    max_index = int(fft_size/(max_freq/1000))#let's keep frequencie below 800 -> 256/(8000/1000) = 32
+
     if len(audio)<audio_lenght*voice_max_length:
         audio = tf.concat([np.zeros([audio_lenght*voice_max_length-len(audio)]), audio], 0)
     else:
         audio = audio[-(audio_lenght*voice_max_length):]
     spectrogram = tf.signal.stft(audio, frame_length=frame_length, frame_step=frame_step)
+    spectrogram = spectrogram[:,0:max_index]#We remove frequency not used in human speech
+
     spectrogram = (tf.math.log(tf.abs(tf.math.real(spectrogram)))/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
     spectrogram = tf.where(tf.math.is_nan(spectrogram), tf.zeros_like(spectrogram), spectrogram)
     spectrogram = tf.where(tf.math.is_inf(spectrogram), tf.zeros_like(spectrogram), spectrogram)
@@ -34,11 +42,11 @@ def audioToTensor(filepath):
     nb_part = len(audio)//audio_lenght
     part_length = len(spectrogram)//nb_part
     partsCount = len(range(0, len(spectrogram)-part_length, part_length//2))
-    parts = np.zeros((partsCount, part_length//2, fft_size//2))
+    parts = np.zeros((partsCount, part_length//2, max_index))
     for i, p in enumerate(range(0, len(spectrogram)-part_length, part_length//2)):
         part = spectrogram[p:p+part_length]
         part = tf.expand_dims(part, axis=-1)
-        resized_part = tf.image.resize(part, (part_length//2, fft_size//2))#We resize all to be more efficient
+        resized_part = tf.image.resize(part, (part_length//2, max_index))#We resize all to be more efficient
         resized_part = tf.squeeze(resized_part, axis=-1)
         parts[i] = resized_part
     return parts
@@ -69,7 +77,7 @@ print("Y_word_test.shape: ", Y_word_test.shape)
 
 latent_dim=32
 encoder_inputs = Input(shape=(testParts.shape[0], testParts.shape[1], testParts.shape[2], 1))
-#preprocessing = TimeDistributed(preprocessing.Resizing(6, 129))(encoder_inputs)
+#preprocessing = TimeDistributed(preprocessing.Resizing(testParts.shape[1], testParts.shape[2]//2))(encoder_inputs)
 normalization = TimeDistributed(BatchNormalization())(encoder_inputs)
 conv2d = TimeDistributed(Conv2D(34, 3, activation='relu'))(normalization)
 conv2d = TimeDistributed(Conv2D(64, 3, activation='relu'))(conv2d)
@@ -83,8 +91,8 @@ model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['acc']
 model.summary()
 tf.keras.utils.plot_model(model, to_file='model_words.png', show_shapes=True)
 
-batch_size = 32
-epochs = 100
+batch_size = 128
+epochs = 50
 history=model.fit(X_audio, Y_word, shuffle=False, batch_size=batch_size, epochs=epochs, steps_per_epoch=len(X_audio)//batch_size, validation_data=(X_audio_test, Y_word_test))
 model.save_weights('model_words.h5')
 model.save("model_words")

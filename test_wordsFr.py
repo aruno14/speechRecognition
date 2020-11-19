@@ -9,33 +9,38 @@ from tensorflow.keras import layers
 import matplotlib.pyplot as plt
 
 words = ['bonjour', 'salut', 'merci', 'aurevoir']
-block_length = 0.050#->500ms
+block_length = 0.500#->500ms
 voice_max_length = int(1/block_length)#->2s
+frame_length = 512
+fft_size = int(frame_length//2+1)
 print("voice_max_length:", voice_max_length)
 
 def audioToTensor(filepath):
     audio_binary = tf.io.read_file(filepath)
-    audio, audioSR = tf.audio.decode_wav(audio_binary)#WebAudioAPI seems to return -1~1
+    audio, audioSR = tf.audio.decode_wav(audio_binary)
     audioSR = tf.get_static_value(audioSR)
     audio = tf.squeeze(audio, axis=-1)
     audio_lenght = int(audioSR * block_length)#->16000*0.5=8000
-    frame_step = int(audioSR * 0.008)#16000*0.008=128 when rate is 1600 -> 8ms
+    frame_step = int(audioSR * 0.008)#16000*0.008=128
     if len(audio)<audio_lenght*voice_max_length:
         audio = tf.concat([np.zeros([audio_lenght*voice_max_length-len(audio)]), audio], 0)
     else:
         audio = audio[-(audio_lenght*voice_max_length):]
-    spectrogram = tf.signal.stft(audio, frame_length=1024, frame_step=frame_step)
+    spectrogram = tf.signal.stft(audio, frame_length=frame_length, frame_step=frame_step)
     spectrogram = (tf.math.log(tf.abs(tf.math.real(spectrogram)))/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
     spectrogram = tf.where(tf.math.is_nan(spectrogram), tf.zeros_like(spectrogram), spectrogram)
     spectrogram = tf.where(tf.math.is_inf(spectrogram), tf.zeros_like(spectrogram), spectrogram)
     voice_length, voice = 0, []
     nb_part = len(audio)//audio_lenght
     part_length = len(spectrogram)//nb_part
-    partsCount = len(range(0, len(spectrogram)-part_length, int(part_length/2)))
-    parts = np.zeros((partsCount, part_length, 513))
-    for i, p in enumerate(range(0, len(spectrogram)-part_length, int(part_length/2))):
+    partsCount = len(range(0, len(spectrogram)-part_length, part_length//2))
+    parts = np.zeros((partsCount, part_length//2, fft_size//2))
+    for i, p in enumerate(range(0, len(spectrogram)-part_length, part_length//2)):
         part = spectrogram[p:p+part_length]
-        parts[i] = part
+        part = tf.expand_dims(part, axis=-1)
+        resized_part = tf.image.resize(part, (part_length//2, fft_size//2))#We resize all to be more efficient
+        resized_part = tf.squeeze(resized_part, axis=-1)
+        parts[i] = resized_part
     return parts
 
 max_data = 200
@@ -65,9 +70,9 @@ print("X_audio_test.shape: ", X_audio_test.shape)
 print("Y_word_test.shape: ", Y_word_test.shape)
 
 latent_dim=32
-encoder_inputs = Input(shape=(testParts.shape[0], None, None, 1))
-preprocessing = TimeDistributed(preprocessing.Resizing(6, 129))(encoder_inputs)
-normalization = TimeDistributed(BatchNormalization())(preprocessing)
+encoder_inputs = Input(shape=(testParts.shape[0], testParts.shape[1], testParts.shape[2], 1))
+#preprocessing = TimeDistributed(preprocessing.Resizing(6, 129))(encoder_inputs)
+normalization = TimeDistributed(BatchNormalization())(encoder_inputs)
 conv2d = TimeDistributed(Conv2D(34, 3, activation='relu'))(normalization)
 conv2d = TimeDistributed(Conv2D(64, 3, activation='relu'))(conv2d)
 maxpool = TimeDistributed(MaxPooling2D())(conv2d)
@@ -75,7 +80,6 @@ dropout = TimeDistributed(Dropout(0.25))(maxpool)
 flatten = TimeDistributed(Flatten())(dropout)
 encoder_lstm = LSTM(units=latent_dim)(flatten)
 decoder_dense = Dense(len(words), activation='softmax')(encoder_lstm)
-
 model = Model(encoder_inputs, decoder_dense)
 model.compile(optimizer=tf.keras.optimizers.Adam(), loss='categorical_crossentropy', metrics=['acc'])
 model.summary(line_length=200)
