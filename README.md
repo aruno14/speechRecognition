@@ -23,6 +23,13 @@ Simple LSTM model to convert audio into word. It uses **Speech command Dataset**
 #### test_wordsFr.py
 Simple LSTM model to convert audio into French word. It uses **a self-made Dataset** included in this repository.
 
+#### test_words_compare.py
+Files to compare accuracy of different audio representation.
+More explanation in Medium article: https://aruno14.medium.com/comparaison-of-audio-representation-in-tensorflow-b6c33a83d77f
+
+#### test_words_human.py
+Same as `test_words.py`, but high frequencies are cut.
+
 ### test_voice.py
 Read audio input data from mic and predict word in real time.
 
