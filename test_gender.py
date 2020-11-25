@@ -9,7 +9,7 @@ from tensorflow.keras.layers import Input, Dense, BatchNormalization, Conv2D, Ma
 from tensorflow.keras.layers.experimental import preprocessing
 import matplotlib.pyplot as plt
 
-maxData = 300
+maxData = 500
 model_name = "model_gender"
 block_length = 0.5
 frame_length = 1024
@@ -21,8 +21,8 @@ def audioToTensor(filepath):
     audioSR = tf.get_static_value(audioSR)
     audio = tf.squeeze(audio, axis=-1)
     frame_step = int(audioSR * 0.008)
-    if len(audio) < frame_step*(image_width+3):
-        audio = tf.concat([np.zeros([(frame_step*(image_width+3))-len(audio)]), audio], 0)
+    if len(audio) < frame_step*(image_width+2) + frame_length:
+        audio = tf.concat([np.zeros([(frame_step*(image_width+2)+frame_length)-len(audio)]), audio], 0)
     spectrogram = tf.signal.stft(audio, frame_length=frame_length, frame_step=frame_step)
     spect_real = tf.math.real(spectrogram)
     spect_real = tf.abs(spect_real)
@@ -113,8 +113,8 @@ else:
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['acc'])
 
 batch_size = 32
-epochs = 15
-history = model.fit(MySequence(dataVoice, dataGender, batch_size, parts_count, min_parts), epochs=epochs, steps_per_epoch=(len(dataVoice)*min_parts) // batch_size)
+epochs = 1
+history = model.fit(MySequence(dataVoice[0:int(len(dataVoice)*0.8)], dataGender[0:int(len(dataVoice)*0.8)], batch_size, parts_count, min_parts), epochs=epochs, validation_data=MySequence(dataVoice[int(len(dataVoice)*0.8):], dataGender[int(len(dataVoice)*0.8):], batch_size, parts_count, min_parts))
 model.save(model_name)
 
 metrics = history.history
@@ -126,8 +126,9 @@ plt.show()
 plt.close()
 
 print("Test voice gender recognition")
-for test_path in ['wordsTestFr/bonjour-01.wav', 'wordsTestFr/bonjour-011.wav', 'wordsTestFr/salut-01.wav']:
+for test_path in ['wordsTestFr/bonjour-01.wav', 'wordsTestFr/bonjour-011.wav', 'wordsTestFr/salut-01.wav', 'wordsFr/bonjour/bonjour-11.wav', 'yuki2.wav']:
     print("test_path: ", test_path)
     test_voice, _ = audioToTensor(test_path)
+    print(test_voice.shape)
     predictions = model.predict(np.asarray(test_voice))
     print("predictions: ", predictions)
