@@ -10,29 +10,29 @@ from tensorflow.keras.layers.experimental import preprocessing
 from tensorflow.keras import backend as K
 import matplotlib.pyplot as plt
 
-maxData = 300
+maxData = 30000
 model_name = "model_age"
-block_length = 0.5
 frame_length = 1024
-image_width = 128
-classesCount=7
+spect_length = int(frame_length/2+1)
+step_time = 0.008
+image_width = 100#100*0.008=800ms
+classesCount = 7
+batch_size = 64
+epochs = 15
 
 def audioToTensor(filepath):
     audio_binary = tf.io.read_file(filepath)
     audio, audioSR = tf.audio.decode_wav(audio_binary)
     audioSR = tf.get_static_value(audioSR)
     audio = tf.squeeze(audio, axis=-1)
-    frame_step = int(audioSR * 0.008)
-    if len(audio) < frame_step*(image_width+3):
-        audio = tf.concat([np.zeros([(frame_step*(image_width+3))-len(audio)]), audio], 0)
+    frame_step = int(audioSR * step_time)
     spectrogram = tf.signal.stft(audio, frame_length=frame_length, frame_step=frame_step)
     spect_real = tf.math.real(spectrogram)
     spect_real = tf.abs(spect_real)
-    partsCount = len(range(0, len(spectrogram)-image_width, image_width))
-    parts = np.zeros((partsCount, image_width, int(frame_length/2+1)))
+    partsCount = len(spectrogram)//image_width
+    parts = np.zeros((partsCount, image_width, spect_length))
     for i, p in enumerate(range(0, len(spectrogram)-image_width, image_width)):
-        part = spect_real[p:p+image_width]
-        parts[i] = part
+        parts[i] = spect_real[p:p+image_width]
     return parts, audioSR
 
 def loadDataFromFile(filepath):
@@ -110,17 +110,17 @@ class MySequence(tf.keras.utils.Sequence):
 def age_mae(y_true, y_pred):
     true_age = K.sum(y_true * K.arange(0, classesCount, dtype="float32"), axis=-1)
     pred_age = K.sum(y_pred * K.arange(0, classesCount, dtype="float32"), axis=-1)
-    mae = K.mean(K.abs(true_age - pred_age))
+    mae = K.abs(true_age - pred_age) * 10
     return mae
 
 if os.path.exists(model_name):
     print("Load: " + model_name)
     model = load_model(model_name, custom_objects={'age_mae':age_mae})
 else:
-    main_input = Input(shape=(image_width, int(frame_length/2+1)), name='main_input')
+    main_input = Input(shape=(image_width, spect_length), name='main_input')
     x = main_input
-    x = Reshape((image_width, int(frame_length/2+1), 1))(x)
-    x = preprocessing.Resizing(image_width//2, int(frame_length/2+1)//2)(x)
+    x = Reshape((image_width, spect_length, 1))(x)
+    x = preprocessing.Resizing(image_width//2, spect_length//2)(x)
     x = Conv2D(34, 3, activation='relu')(x)
     x = Conv2D(64, 3, activation='relu')(x)
     x = MaxPooling2D()(x)
@@ -128,19 +128,16 @@ else:
     x = Flatten()(x)
     x = Dense(classesCount, activation='sigmoid')(x)
     model = Model(inputs=main_input, outputs=x)
-    tf.keras.utils.plot_model(model, to_file='model_age.png', show_shapes=True)
+    tf.keras.utils.plot_model(model, to_file=model_name+'.png', show_shapes=True)
 model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=[age_mae])
 
-batch_size = 32
-epochs = 15
-history = model.fit(MySequence(dataVoice, dataAge, batch_size, parts_count, min_parts), epochs=epochs, steps_per_epoch=(len(dataVoice)*min_parts) // batch_size, class_weight=weights)
-model.save(model_name)
+history = model.fit(MySequence(dataVoice[:int(len(dataVoice)*0.8)], dataAge[:int(len(dataVoice)*0.8)], batch_size, parts_count, min_parts), epochs=epochs, class_weight=weights, validation_data=MySequence(dataVoice[int(len(dataVoice)*0.8):], dataAge[int(len(dataVoice)*0.8):], batch_size, parts_count, min_parts))
 
 metrics = history.history
 
 plt.plot(history.epoch, metrics['loss'], metrics['age_mae'])
 plt.legend(['loss', 'age_mae'])
-plt.savefig("learning-age.png")
+plt.savefig(model_name+"-learning.png")
 plt.show()
 plt.close()
 
