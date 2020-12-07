@@ -18,7 +18,7 @@ step_time = 0.008
 image_width = 100#100*0.008=800ms
 classesCount = 7
 batch_size = 64
-epochs = 1
+epochs = 15
 
 def audioToTensor(filepath):
     audio_binary = tf.io.read_file(filepath)
@@ -133,7 +133,7 @@ history = model.fit(MySequence(dataVoice[:int(len(dataVoice)*0.8)], dataAge[:int
 model.save(model_name)
 
 print("Test voice gender recognition")
-for test_path in ['arnaud_long.wav', 'wordsTestFr/bonjour-01.wav', 'wordsTestFr/bonjour-011.wav', 'wordsTestFr/salut-01.wav']:
+for test_path in ['wordsTestFr/bonjour-01.wav', 'wordsTestFr/bonjour-011.wav', 'wordsTestFr/salut-01.wav']:
     print("test_path: ", test_path)
     test_voice, _ = audioToTensor(test_path)
     predictions = model.predict(np.asarray(test_voice))
