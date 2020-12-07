@@ -18,9 +18,9 @@ step_time = 0.008
 image_width = 100#100*0.008=800ms
 classesCount = 7
 batch_size = 64
-epochs = 15
+epochs = 1
 
-def audioToTensor(filepath):
+def audioToTensor(filepath:str):
     audio_binary = tf.io.read_file(filepath)
     audio, audioSR = tf.audio.decode_wav(audio_binary)
     audioSR = tf.get_static_value(audioSR)
@@ -108,10 +108,9 @@ class MySequence(tf.keras.utils.Sequence):
         return batch_x_voice, batch_y_age
 
 def age_mae(y_true, y_pred):
-    true_age = K.sum(y_true * K.arange(0, classesCount, dtype="float32"), axis=-1)
-    pred_age = K.sum(y_pred * K.arange(0, classesCount, dtype="float32"), axis=-1)
-    mae = K.abs(true_age - pred_age) * 10
-    return mae
+    true_age = K.sum(y_true * K.arange(15, classesCount*10+10, 10, dtype="float32"), axis=-1)
+    pred_age = K.sum(y_pred * K.arange(15, classesCount*10+10, 10, dtype="float32"), axis=-1)
+    return K.mean(K.abs(true_age - pred_age))
 
 if os.path.exists(model_name):
     print("Load: " + model_name)
@@ -126,7 +125,7 @@ else:
     x = MaxPooling2D()(x)
     x = Dropout(0.1)(x)
     x = Flatten()(x)
-    x = Dense(classesCount, activation='sigmoid')(x)
+    x = Dense(classesCount, activation='softmax')(x)
     model = Model(inputs=main_input, outputs=x)
     tf.keras.utils.plot_model(model, to_file=model_name+'.png', show_shapes=True)
 model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=[age_mae])
@@ -134,7 +133,6 @@ model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=[age_ma
 history = model.fit(MySequence(dataVoice[:int(len(dataVoice)*0.8)], dataAge[:int(len(dataVoice)*0.8)], batch_size, parts_count, min_parts), epochs=epochs, class_weight=weights, validation_data=MySequence(dataVoice[int(len(dataVoice)*0.8):], dataAge[int(len(dataVoice)*0.8):], batch_size, parts_count, min_parts))
 
 metrics = history.history
-
 plt.plot(history.epoch, metrics['loss'], metrics['age_mae'])
 plt.legend(['loss', 'age_mae'])
 plt.savefig(model_name+"-learning.png")
@@ -142,12 +140,12 @@ plt.show()
 plt.close()
 
 print("Test voice gender recognition")
-for test_path in ['wordsTestFr/bonjour-01.wav', 'wordsTestFr/bonjour-011.wav', 'wordsTestFr/salut-01.wav']:
+for test_path in ['arnaud_long.wav', 'wordsTestFr/bonjour-01.wav', 'wordsTestFr/bonjour-011.wav', 'wordsTestFr/salut-01.wav']:
     print("test_path: ", test_path)
     test_voice, _ = audioToTensor(test_path)
     predictions = model.predict(np.asarray(test_voice))
-    age = 0
-    for i, p in enumerate(predictions[0]):
-        age+= p * (i+1) * 10
+    if len(predictions) > 1:
+        predictions = np.mean(predictions, axis=-1)
+    age = np.sum(predictions * np.arange(15, classesCount*10+10, 10, dtype="float32"))
     print("predictions: ", predictions)
     print("age:", age)
