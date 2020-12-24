@@ -48,7 +48,6 @@ max_data = 900
 wordToId, idToWord = {}, {}
 testParts = audioToTensor('mini_speech_commands/go/0a9f9af7_nohash_0.wav')
 print(testParts.shape)
-exit(0)
 X_audio, Y_word = np.zeros((max_data*8, testParts.shape[0], testParts.shape[1], testParts.shape[2])), np.zeros((max_data*8, 8))
 
 files = {}
