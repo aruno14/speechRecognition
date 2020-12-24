@@ -14,7 +14,7 @@ epochs = 50
 frame_length = 512
 fft_size = int(frame_length//2+1)
 step_length = 0.008
-image_width =  128//4#128*0.008 = 1.024s
+image_width = 128//4#128*0.008 = 1.024s
 audio_max_length = 1.5#1.5
 
 def audioToTensor(filepath:str):
@@ -33,7 +33,6 @@ def audioToTensor(filepath:str):
     spect_real = (tf.math.log(spect_real)/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
     spect_real = tf.where(tf.math.is_nan(spect_real), tf.zeros_like(spect_real), spect_real)
     spect_real = tf.where(tf.math.is_inf(spect_real), tf.zeros_like(spect_real), spect_real)
-    print(spect_real)
     partsCount = len(spect_real)//(image_width//2)
     parts = np.zeros((partsCount, image_width//2, fft_size//2))
     for i, p in enumerate(range(0, len(spect_real)-image_width, image_width//2)):
