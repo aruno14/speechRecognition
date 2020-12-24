@@ -9,44 +9,46 @@ from tensorflow.keras import layers
 import matplotlib.pyplot as plt
 
 words=['down', 'go', 'left', 'no', 'right', 'stop', 'up', 'yes']
-block_length = 0.500#->500ms
-voice_max_length = int(1/block_length)#->2s
+batch_size = 64
+epochs = 50
 frame_length = 512
 fft_size = int(frame_length//2+1)
-print("voice_max_length:", voice_max_length)
+step_length = 0.008
+image_width =  128//4#128*0.008 = 1.024s
+audio_max_length = 1.5#1.5
 
-def audioToTensor(filepath):
+def audioToTensor(filepath:str):
     audio_binary = tf.io.read_file(filepath)
     audio, audioSR = tf.audio.decode_wav(audio_binary)
     audioSR = tf.get_static_value(audioSR)
     audio = tf.squeeze(audio, axis=-1)
-    audio_lenght = int(audioSR * block_length)#->16000*0.5=8000
-    frame_step = int(audioSR * 0.008)#16000*0.008=128
-    if len(audio)<audio_lenght*voice_max_length:
-        audio = tf.concat([np.zeros([audio_lenght*voice_max_length-len(audio)]), audio], 0)
+    frame_step = int(audioSR * step_length)#16000*0.008=128
+    if len(audio)<audioSR*audio_max_length:
+        audio = tf.concat([np.zeros([int(audioSR*audio_max_length)-len(audio)]), audio], 0)
     else:
-        audio = audio[-(audio_lenght*voice_max_length):]
+        audio = audio[-int(audioSR*audio_max_length):]
     spectrogram = tf.signal.stft(audio, frame_length=frame_length, frame_step=frame_step)
-    spectrogram = (tf.math.log(tf.abs(tf.math.real(spectrogram)))/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
-    spectrogram = tf.where(tf.math.is_nan(spectrogram), tf.zeros_like(spectrogram), spectrogram)
-    spectrogram = tf.where(tf.math.is_inf(spectrogram), tf.zeros_like(spectrogram), spectrogram)
-    voice_length, voice = 0, []
-    nb_part = len(audio)//audio_lenght
-    part_length = len(spectrogram)//nb_part
-    partsCount = len(range(0, len(spectrogram)-part_length, part_length//2))
-    parts = np.zeros((partsCount, part_length//2, fft_size//2))
-    for i, p in enumerate(range(0, len(spectrogram)-part_length, part_length//2)):
-        part = spectrogram[p:p+part_length]
+    spect_real = tf.math.real(spectrogram)
+    spect_real = tf.abs(spect_real)
+    spect_real = (tf.math.log(spect_real)/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
+    spect_real = tf.where(tf.math.is_nan(spect_real), tf.zeros_like(spect_real), spect_real)
+    spect_real = tf.where(tf.math.is_inf(spect_real), tf.zeros_like(spect_real), spect_real)
+    print(spect_real)
+    partsCount = len(spect_real)//(image_width//2)
+    parts = np.zeros((partsCount, image_width//2, fft_size//2))
+    for i, p in enumerate(range(0, len(spect_real)-image_width, image_width//2)):
+        part = spect_real[p:p+image_width]
         part = tf.expand_dims(part, axis=-1)
-        resized_part = tf.image.resize(part, (part_length//2, fft_size//2))#We resize all to be more efficient
+        resized_part = tf.image.resize(part, (image_width//2, fft_size//2))#We resize all to be more efficient
         resized_part = tf.squeeze(resized_part, axis=-1)
         parts[i] = resized_part
     return parts
 
-max_data = 500
+max_data = 900
 wordToId, idToWord = {}, {}
 testParts = audioToTensor('mini_speech_commands/go/0a9f9af7_nohash_0.wav')
 print(testParts.shape)
+exit(0)
 X_audio, Y_word = np.zeros((max_data*8, testParts.shape[0], testParts.shape[1], testParts.shape[2])), np.zeros((max_data*8, 8))
 
 files = {}
@@ -83,8 +85,6 @@ model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['acc']
 model.summary()
 tf.keras.utils.plot_model(model, to_file='model_words.png', show_shapes=True)
 
-batch_size = 32
-epochs = 100
 history=model.fit(X_audio, Y_word, shuffle=False, batch_size=batch_size, epochs=epochs, steps_per_epoch=len(X_audio)//batch_size, validation_data=(X_audio_test, Y_word_test))
 model.save_weights('model_words.h5')
 model.save("model_words")

@@ -6,8 +6,10 @@
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
   <title>Speech Recognition in browser</title>
   <script>
-  const WIDTH=800;
-  const HEIGHT=100;
+  const WIDTH = 800;
+  const HEIGHT = 100;
+  const fftSize = 256;
+  const fftResult = Math.floor(fftSize/2)+1;
   const enDic = ['down', 'go', 'left', 'no', 'right', 'stop', 'up', 'yes'];
   let spectroOffset = 0;
   let modelEn = null;
@@ -16,19 +18,19 @@
   let analyser = null;
   let audioCtx = null;
   let stop = true;
-  const blockSize = 6;
-  const maxLength = 39*6;
+  const blockSize = 128/4;
+  const maxLength = 11;
   let silenceCount = 0;
   let buffer = [];
   let interval = null;
-  let timeFromLastReco = 100;
+  let timeFromLastReco = 0;
 
   function fillBuffer()
   {
     buffer=[];
-    for(i=0;i<150;i++)
+    for(i=0;i < maxLength * blockSize;i++)
     {
-      buffer.push(new Array(513).fill(0));
+      buffer.push(new Array(fftResult).fill(0));
     }
   }
 
@@ -36,6 +38,7 @@
   {
     modelEn = await tf.loadGraphModel('http://localhost:3000/quantized_model_en/model.json');
   }
+
   async function predictWord()
   {
     console.log("buffer:", buffer);
@@ -50,16 +53,17 @@
           newBlock.unshift(buffer[i-1-j]);
         }
         else {
-          newBlock.unshift(new Array(513).fill(0));
+          newBlock.unshift(new Array(fftResult).fill(0));
         }
       }
 
-      if(newBufferEn.length>=57) {break;}
+      if(newBufferEn.length>=maxLength) {break;}
       newBufferEn.unshift(newBlock);
       i-=blockSize/2;
     }
     let tensorEn = tf.tensor(newBufferEn).expandDims(-1);
     tensorEn = tf.where(tf.isInf(tensorEn), tf.zerosLike(tensorEn), tensorEn);
+    console.log(tensorEn);
     let predictionEn = await modelEn.executeAsync(tensorEn.expandDims(0));
     predictionEn = predictionEn.squeeze();
     const predictionArrayEn = await predictionEn.array();
@@ -75,25 +79,26 @@
     const spectrum = new Float32Array(analyser.frequencyBinCount);
     analyser.getFloatFrequencyData(spectrum);
     let arrayData = Array.from(spectrum);
-    timeFromLastReco++;
+    arrayData.push(arrayData[arrayData.length-1]);
+    buffer.push(arrayData);
+
     const volume = (arrayData[0] + arrayData[1] + arrayData[2] + arrayData[3])/4;
     if(volume < -60)
     {
       //console.log("Silence skip:", volume);
       silenceCount++;
-      if(silenceCount>100)
+      if(silenceCount>10)
       {
-        fillBuffer();
+        timeFromLastReco=0;
       }
       return;
     }
     silenceCount=0;
-    arrayData.push(arrayData[arrayData.length-1]);
-    buffer.push(arrayData);
-    if(buffer.length>(maxLength*blockSize/2-1)/4&&(timeFromLastReco>10))
+    timeFromLastReco++;
+    if(buffer.length > (maxLength* blockSize) && (timeFromLastReco>30))
     {
       timeFromLastReco=0;
-      buffer.shift();
+      buffer = buffer.slice(buffer.length - (maxLength*blockSize), buffer.length);
       predictWord();
     }
   }
@@ -102,7 +107,6 @@
     const spectrum = new Float32Array(analyser.frequencyBinCount);
     analyser.getFloatFrequencyData(spectrum);
     let arrayData = Array.from(spectrum);
-    const volume = (arrayData[0] + arrayData[1] + arrayData[2] + arrayData[3])/4;
     arrayData.push(arrayData[arrayData.length-1]);
     buffer.push(arrayData);
   }
@@ -173,12 +177,12 @@
       console.log("getAudioTracks: ", captureStream.getAudioTracks());
       const audio_track = captureStream.getAudioTracks()[0];
       console.log("Use mic: ", audio_track.label);
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({"sampleRate":16000});
       console.log("audioCtx.sampleRate:", audioCtx.sampleRate);
       analyser = audioCtx.createAnalyser();
       source = audioCtx.createMediaStreamSource(captureStream);
       source.connect(analyser);
-      analyser.fftSize = 1024;
+      analyser.fftSize = fftSize;
       analyser.smoothingTimeConstant = 0;
       console.log("frequencyBinCount: ", analyser.frequencyBinCount)
       drawSignal();
@@ -199,17 +203,17 @@
       const sr = $(this).attr('sr');
       fillBuffer();
       stop=false;
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)({"sampleRate":sr});//16000}); 44100
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({"sampleRate":sr});
       source = audioCtx.createBufferSource();
       analyser = audioCtx.createAnalyser();
       source.connect(analyser);
       source.onended = function(){
-        predictWord();
         clearInterval(interval);
         source.stop(0);
         stop=true;
+        predictWord();
       };
-      analyser.fftSize = 1024;
+      analyser.fftSize = fftSize;
       analyser.smoothingTimeConstant = 0;
       console.log("frequencyBinCount: ", analyser.frequencyBinCount);
       let request = new XMLHttpRequest();
@@ -258,6 +262,7 @@
         <a class="fileToWord btn btn-primary" file="clips/0b40aa8e_nohash_0.wav" sr="16000">File to word (yes)</a>
         <a class="fileToWord btn btn-primary" file="clips/1c6e5447_nohash_0.wav" sr="16000">File to word (no)</a>
         <a class="fileToWord btn btn-primary" file="clips/2a89ad5c_nohash_0.wav" sr="16000">File to word (left)</a>
+        <a class="fileToWord btn btn-primary" file="clips/0a9f9af7_nohash_0.wav" sr="16000">File to word (go)</a>
       </div>
       <hr>
       <canvas id="oscilo" width="800" height="100"></canvas>

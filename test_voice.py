@@ -11,43 +11,34 @@ for i, word in enumerate(words):
     wordToId[word] = i
     idToWord[i] = word
 
-block_length = 0.050#->500ms
-voice_max_length = int(1/block_length)#->2s
-print("voice_max_length:", voice_max_length)
-def arrayToTensor(audioArray, audioSR):
-    audio = tf.convert_to_tensor(audioArray, dtype=tf.float32)/ 32768.0
-    audioSR = tf.get_static_value(audioSR)
-    audio_length = int(audioSR * block_length)#->16000*0.5=8000
-    frame_step = int(audioSR * 0.008)#16000*0.008=128
-    voice_length, audio_clean = 0, tf.constant([], tf.float32)
-    audio_length_clean = audioSR//20
-    if len(audio)<audio_length*voice_max_length:
-        audio = tf.concat([np.zeros([audio_length*voice_max_length-len(audio)]), audio], 0)
-    else:
-        audio = audio[-(audio_length*voice_max_length):]
-    spectrogram = tf.signal.stft(audio, frame_length=1024, frame_step=frame_step)
-    spectrogram = (tf.math.log(tf.abs(tf.math.real(spectrogram)))/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
-    spectrogram = tf.where(tf.math.is_nan(spectrogram), tf.zeros_like(spectrogram), spectrogram)
-    spectrogram = tf.where(tf.math.is_inf(spectrogram), tf.zeros_like(spectrogram), spectrogram)
-    voice_length, voice = 0, []
-    nb_part = len(audio)//audio_length
-    part_length = len(spectrogram)//nb_part
-    partsCount = len(range(0, len(spectrogram)-part_length, int(part_length/2)))
-    parts = np.zeros((partsCount, part_length, 513))
-    for i, p in enumerate(range(0, len(spectrogram)-part_length, int(part_length/2))):
-        part = spectrogram[p:p+part_length]
-        parts[i] = part
+image_width =  128//4#128*0.008 = 1.024s
+frame_length = 512
+fft_size = int(frame_length//2+1)
+step_length = 0.008
+audio_max_length = 1.5#2s
+
+def arrayToTensor(audioArray, audioSR:int):
+    audio = tf.convert_to_tensor(audioArray, dtype=tf.float32)
+    frame_step = int(audioSR * step_length)
+    spectrogram = tf.signal.stft(audio, frame_length=frame_length, frame_step=frame_step)
+    spect_real = tf.math.real(spectrogram)
+    spect_real = tf.abs(spect_real)
+    spect_real = (tf.math.log(spect_real)/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
+    spect_real = tf.where(tf.math.is_nan(spect_real), tf.zeros_like(spect_real), spect_real)
+    spect_real = tf.where(tf.math.is_inf(spect_real), tf.zeros_like(spect_real), spect_real)
+    partsCount = len(spect_real)//(image_width//2)
+    parts = np.zeros((partsCount, image_width, fft_size))
+    for i, p in enumerate(range(0, len(spect_real)-image_width, image_width//2)):
+        parts[i] = spect_real[p:p+image_width]
     return parts
 
 model = tf.keras.models.load_model('model_words')
-CHUNK = 1024*2
-FORMAT = pyaudio.paInt32
-CHANNELS = 1
+CHUNK = 16000
+FORMAT, CHANNELS = pyaudio.paInt16, 1
 RATE = 16000#44100
 RECORD_SECONDS = 20
 decoded_data = []
 silenceCount = 0
-audio_length = int(RATE * block_length)
 
 p = pyaudio.PyAudio()
 stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
@@ -58,12 +49,10 @@ for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
     count = len(data)/2
     format = "%dh"%(count)
     shorts = struct.unpack(format, data)
-    even_i = []
-    for j in range(0, len(shorts)):
-        if j % 2:
-            even_i.append(shorts[j])
-    meanNoise = np.mean(np.abs(even_i))
-    if(meanNoise < 300):#update this value if needed
+    newData = np.asarray(shorts)/32767
+    meanNoise = np.mean(np.abs(newData))
+    #print(meanNoise, np.max(newData))
+    if(meanNoise < 0.001):#update this value if needed
         #print("silence:", meanNoise)
         silenceCount+=1
         if silenceCount > 5:
@@ -71,12 +60,14 @@ for i in range(0, int(RATE / CHUNK * RECORD_SECONDS)):
         if silenceCount > 2:
             continue
     else:
-        #print("Sound:", meanNoise)
+        print("Sound:", meanNoise)
         silenceCount=0
-    decoded_data = decoded_data + even_i
-    if(len(decoded_data) > audio_length*voice_max_length/2):
-        test_audio = arrayToTensor(decoded_data, RATE)
-        result = model.predict(np.array([test_audio]))[0]
+    decoded_data = np.concatenate([decoded_data, newData], axis=-1)
+    if(len(decoded_data) >= int(RATE*audio_max_length)):
+        input_data = decoded_data[-int(RATE*audio_max_length):]
+        output_audio = arrayToTensor(input_data, RATE)
+        output_audio = tf.expand_dims(output_audio, axis=-1)
+        result = model.predict(np.array([output_audio]))[0]
         max = np.argmax(result)
         if(result[max]>0.5):
             print("finded word:", i, "->", result, max, result[max], idToWord[max])
