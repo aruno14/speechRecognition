@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 
 maxData = 30
 model_name = "model_sentence"
+data_folder = "en/"
+clips_folder = data_folder + "clips/"
 block_length = 0.050#->500ms
 voice_max_length = int(10/block_length)#->2s
 print("voice_max_length:", voice_max_length)
@@ -55,8 +57,7 @@ def audioToTensor(filepath):
         parts[i] = part
     return parts
 
-
-testParts = audioToTensor('clips/common_voice_en_699711.wav')
+testParts = audioToTensor(clips_folder+'common_voice_en_699711.wav')
 print(testParts.shape)
 
 def loadDataFromFile(filepath):
@@ -78,7 +79,7 @@ def loadDataFromFile(filepath):
         dataVoice.append(row[1].replace(".mp3", '.wav'))
     return dataVoice, dataString, string_max_lenght
 
-dataVoice, dataString, string_max_lenght = loadDataFromFile('train.tsv')
+dataVoice, dataString, string_max_lenght = loadDataFromFile(data_folder+'train.tsv')
 
 print("voice_max_length: ", voice_max_length)
 print("string_max_lenght: ", string_max_lenght)
@@ -118,7 +119,7 @@ class MySequence(tf.keras.utils.Sequence):
         batch_y_string = self.y_string[idx * self.batch_size:(idx + 1) * self.batch_size]
         batch_x_voice = np.zeros((self.batch_size, testParts.shape[0], testParts.shape[1], testParts.shape[2]))
         for i in range(0, batch_size):
-            voice = audioToTensor('fi/clips/' + self.x_voice[idx * self.batch_size + i])
+            voice = audioToTensor(clips_folder + self.x_voice[idx * self.batch_size + i])
             batch_x_voice[i] = voice
         batch_x_string = np.array(batch_x_string)
         batch_y_string = np.array(batch_y_string)
@@ -200,9 +201,9 @@ def decode_sequence(input_seq):
     return decoded_sentence
 
 print("Test voice recognition")
-for test_path, test_string in [('clips/common_voice_en_346569.wav', "Do you want me?"), ('clips/common_voice_en_12677.wav', 'Man in red tshirt and baseball cap viewed from above he is has a pile of posters'), ('clips/common_voice_en_590694.wav', 'Touchscreens do not provide haptic feedback')]:
+for test_path, test_string in [('common_voice_en_346569.wav', "Do you want me?"), ('common_voice_en_12677.wav', 'Man in red tshirt and baseball cap viewed from above he is has a pile of posters'), ('common_voice_en_590694.wav', 'Touchscreens do not provide haptic feedback')]:
     print("test_string: ", test_string)
-    test_voice = audioToTensor(test_path)
+    test_voice = audioToTensor(clips_folder+test_path)
     print(np.array([test_voice]).shape)
     decoded_sentence = decode_sequence(np.array([test_voice]))
     print("decoded_sentence: ", decoded_sentence)
