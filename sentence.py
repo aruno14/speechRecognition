@@ -26,6 +26,7 @@ def audioToTensor(filepath):
     frame_step = int(audioSR * 0.008)# 128 when rate is 1600 -> 8ms
     audio_clean = tf.constant([], tf.float32)
     audio_length_clean = audioSR//20#50ms
+
     for i in range(0, len(audio), audio_length_clean):
         audio_slice = audio[i:i+audio_length_clean]
         position = tfio.experimental.audio.trim(audio_slice, axis=0, epsilon=0.065)
@@ -36,9 +37,9 @@ def audioToTensor(filepath):
         audio_clean = tf.concat([audio_clean, audio_slice], 0)
 
     if len(audio_clean)<audio_length*voice_max_length:
-        audio = tf.concat([np.zeros([audio_length*voice_max_length-len(audio_clean)]), audio], 0)
+        audio = tf.concat([np.zeros([audio_length*voice_max_length-len(audio_clean)]), audio_clean], 0)
     else:
-        audio = audio[-(audio_length*voice_max_length):]
+        audio = audio_clean[-(audio_length*voice_max_length):]
 
     spectrogram = tf.signal.stft(audio, frame_length=1024, frame_step=frame_step)
     spectrogram = (tf.math.log(tf.abs(tf.math.real(spectrogram)))/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
@@ -99,8 +100,8 @@ def prepareData(dataString, dataVoice):
             out_seq = pad_sequences([out_seq], maxlen=string_max_lenght-1)[0]
             out_seq = to_categorical([out_seq], num_classes=vocab_size)[0]
             X_voice.append(voice)
-            X_string.append(in_seq)
-            Y_string.append(out_seq)
+            X_string.append(np.array(in_seq))
+            Y_string.append(np.array(out_seq))
     return X_voice, X_string, Y_string
 
 X_voice, X_string, Y_string = prepareData(dataString, dataVoice)
@@ -115,11 +116,13 @@ class MySequence(tf.keras.utils.Sequence):
     def __getitem__(self, idx):
         batch_x_string = self.x_string[idx * self.batch_size:(idx + 1) * self.batch_size]
         batch_y_string = self.y_string[idx * self.batch_size:(idx + 1) * self.batch_size]
-        batch_x_voice = []
+        batch_x_voice = np.zeros((self.batch_size, testParts.shape[0], testParts.shape[1], testParts.shape[2]))
         for i in range(0, batch_size):
-            voice = audioToTensor('clips/' + self.x_voice[idx * self.batch_size + i])
-            batch_x_voice.append(voice)
-        return [np.array(batch_x_voice), np.array(batch_x_string)], np.array(batch_y_string)
+            voice = audioToTensor('fi/clips/' + self.x_voice[idx * self.batch_size + i])
+            batch_x_voice[i] = voice
+        batch_x_string = np.array(batch_x_string)
+        batch_y_string = np.array(batch_y_string)
+        return [batch_x_voice, batch_x_string], batch_y_string
 
 def word_for_id(integer, tokenizer):
     for word, index in tokenizer.word_index.items():
