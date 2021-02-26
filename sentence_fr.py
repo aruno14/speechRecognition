@@ -14,10 +14,13 @@ import matplotlib.pyplot as plt
 
 maxData = 30
 model_name = "model_sentence_fr"
+data_folder = "fr/"
+clips_folder = data_folder + "clips/"
 block_length = 0.050#->500ms
-voice_max_length = int(10/block_length)#->2s
+voice_max_length = int(8/block_length)#->8s
 print("voice_max_length:", voice_max_length)
-def audioToTensor(filepath):
+
+def audioToTensor(filepath:str):
     audio_binary = tf.io.read_file(filepath)
     audio, audioSR = tf.audio.decode_wav(audio_binary)
     audioSR = tf.get_static_value(audioSR)
@@ -36,9 +39,9 @@ def audioToTensor(filepath):
         audio_clean = tf.concat([audio_clean, audio_slice], 0)
 
     if len(audio_clean)<audio_length*voice_max_length:
-        audio = tf.concat([np.zeros([audio_length*voice_max_length-len(audio_clean)]), audio], 0)
+        audio = tf.concat([np.zeros([audio_length*voice_max_length-len(audio_clean)]), audio_clean], 0)
     else:
-        audio = audio[-(audio_length*voice_max_length):]
+        audio = audio_clean[-(audio_length*voice_max_length):]
 
     spectrogram = tf.signal.stft(audio, frame_length=1024, frame_step=frame_step)
     spectrogram = (tf.math.log(tf.abs(tf.math.real(spectrogram)))/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
@@ -54,8 +57,7 @@ def audioToTensor(filepath):
         parts[i] = part
     return parts
 
-
-testParts = audioToTensor('clips/common_voice_fr_19598904.wav')
+testParts = audioToTensor(clips_folder+'common_voice_fr_19598904.wav')
 print(testParts.shape)
 
 def loadDataFromFile(filepath):
@@ -77,7 +79,7 @@ def loadDataFromFile(filepath):
         dataVoice.append(row[1].replace(".mp3", '.wav'))
     return dataVoice, dataString, string_max_lenght
 
-dataVoice, dataString, string_max_lenght = loadDataFromFile('train.tsv')
+dataVoice, dataString, string_max_lenght = loadDataFromFile(data_folder+'train.tsv')
 
 print("voice_max_length: ", voice_max_length)
 print("string_max_lenght: ", string_max_lenght)
@@ -99,8 +101,8 @@ def prepareData(dataString, dataVoice):
             out_seq = pad_sequences([out_seq], maxlen=string_max_lenght-1)[0]
             out_seq = to_categorical([out_seq], num_classes=vocab_size)[0]
             X_voice.append(voice)
-            X_string.append(in_seq)
-            Y_string.append(out_seq)
+            X_string.append(np.array(in_seq))
+            Y_string.append(np.array(out_seq))
     return X_voice, X_string, Y_string
 
 X_voice, X_string, Y_string = prepareData(dataString, dataVoice)
@@ -115,12 +117,13 @@ class MySequence(tf.keras.utils.Sequence):
     def __getitem__(self, idx):
         batch_x_string = self.x_string[idx * self.batch_size:(idx + 1) * self.batch_size]
         batch_y_string = self.y_string[idx * self.batch_size:(idx + 1) * self.batch_size]
-        batch_x_voice = []
+        batch_x_voice = np.zeros((self.batch_size, testParts.shape[0], testParts.shape[1], testParts.shape[2]))
         for i in range(0, batch_size):
-            voice = audioToTensor('clips/' + self.x_voice[idx * self.batch_size + i])
-            #print(tf.shape(voice))
+            voice = audioToTensor(clips_folder +  + self.x_voice[idx * self.batch_size + i])
             batch_x_voice.append(voice)
-        return [np.array(batch_x_voice), np.array(batch_x_string)], np.array(batch_y_string)
+        batch_x_string = np.array(batch_x_string)
+        batch_y_string = np.array(batch_y_string)
+        return [batch_x_voice, batch_x_string], batch_y_string
 
 def word_for_id(integer, tokenizer):
     for word, index in tokenizer.word_index.items():
@@ -198,9 +201,9 @@ def decode_sequence(input_seq):
     return decoded_sentence
 
 print("Test voice recognition")
-for test_path, test_string in [('clips/common_voice_fr_19598904.wav', "L'endroit est recouvert de goyaviers et d'acacias non endémiques"), ('clips/common_voice_fr_19598936.wav', 'La Foire sur la place décrit les début du compositeur à Paris'), ('clips/common_voice_fr_20268897.wav', 'Quand il revient à Paris, deux ans plus tard, la pépinière a été détruite'), ('clips/common_voice_fr_19999318.wav', "Peu de chansons de cet album n'ont pas connu de reprises"), ('clips/common_voice_fr_19733071.wav', 'La série avait été diffusée par la télévision algérienne quelques mois auparavant')]:
+for test_path, test_string in [('common_voice_fr_19598904.wav', "L'endroit est recouvert de goyaviers et d'acacias non endémiques"), ('common_voice_fr_19598936.wav', 'La Foire sur la place décrit les début du compositeur à Paris'), ('common_voice_fr_20268897.wav', 'Quand il revient à Paris, deux ans plus tard, la pépinière a été détruite'), ('common_voice_fr_19999318.wav', "Peu de chansons de cet album n'ont pas connu de reprises"), ('common_voice_fr_19733071.wav', 'La série avait été diffusée par la télévision algérienne quelques mois auparavant')]:
     print("test_string: ", test_string)
-    test_voice = audioToTensor(test_path)
+    test_voice = audioToTensor(clips_folder+test_path)
     print(np.array([test_voice]).shape)
     decoded_sentence = decode_sequence(np.array([test_voice]))
     print("decoded_sentence: ", decoded_sentence)

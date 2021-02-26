@@ -17,9 +17,10 @@ model_name = "model_sentence"
 data_folder = "en/"
 clips_folder = data_folder + "clips/"
 block_length = 0.050#->500ms
-voice_max_length = int(10/block_length)#->2s
+voice_max_length = int(8/block_length)#->8s
 print("voice_max_length:", voice_max_length)
-def audioToTensor(filepath):
+
+def voice_max_length(filepath:str):
     audio_binary = tf.io.read_file(filepath)
     audio, audioSR = tf.audio.decode_wav(audio_binary)
     audioSR = tf.get_static_value(audioSR)
