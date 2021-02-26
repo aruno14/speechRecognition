@@ -14,13 +14,13 @@ import matplotlib.pyplot as plt
 
 maxData = 30
 model_name = "model_sentence"
-data_folder = "en/"
+data_folder = "fi/"
 clips_folder = data_folder + "clips/"
 block_length = 0.050#->500ms
 voice_max_length = int(8/block_length)#->8s
 print("voice_max_length:", voice_max_length)
 
-def voice_max_length(filepath:str):
+def audioToTensor(filepath:str):
     audio_binary = tf.io.read_file(filepath)
     audio, audioSR = tf.audio.decode_wav(audio_binary)
     audioSR = tf.get_static_value(audioSR)
@@ -131,6 +131,11 @@ def word_for_id(integer, tokenizer):
         if index == integer:
             return word
     return None
+
+#May be required for GPU
+#config = tf.compat.v1.ConfigProto()
+#config.gpu_options.allow_growth = True
+#session = tf.compat.v1.Session(config=config)
 
 if os.path.exists(model_name):
     print("Load: " + model_name)
