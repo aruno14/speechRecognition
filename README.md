@@ -39,8 +39,14 @@ Simple WebServer in NodeJS.
 ### convert_mp3towav.sh
 Convert all `mp3` files of current folder in `wav`.
 
+### sentence.py
+Seq2Seq model to convert audio sentence in text. It uses Mozilla Common Voice English dataset.
+
 ### sentence_fr.py
 Seq2Seq model to convert audio sentence in text. It uses Mozilla Common Voice French dataset.
+
+### sentence_jp.py
+Seq2Seq model to convert audio sentence in text. It uses Mozilla Common Voice Japanese dataset. It uses `MeCab` for word segmentation.
 
 ## HTML pages
 In order to avoid CORS probleme, we use a local WebServer. You can use `python3 -m http.server 3000` or `node server_express.js` and access: http://localhost:3000.
