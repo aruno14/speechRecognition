@@ -120,7 +120,7 @@ class MySequence(tf.keras.utils.Sequence):
         batch_x_voice = np.zeros((self.batch_size, testParts.shape[0], testParts.shape[1], testParts.shape[2]))
         for i in range(0, batch_size):
             voice = audioToTensor(os.path.join(clips_folder, self.x_voice[idx * self.batch_size + i]))
-            batch_x_voice.append(voice)
+            batch_x_voice[i] = voice
         batch_x_string = np.array(batch_x_string)
         batch_y_string = np.array(batch_y_string)
         return [batch_x_voice, batch_x_string], batch_y_string
