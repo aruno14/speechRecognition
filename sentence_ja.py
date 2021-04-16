@@ -13,13 +13,16 @@ import tensorflow_io as tfio
 import matplotlib.pyplot as plt
 import MeCab
 
-wakati = MeCab.Tagger("-Owakati -r /etc/mecabrc")
+wakati = MeCab.Tagger("-Owakati")# -r /etc/mecabrc
 
 maxData = 30
+data_folder = "ja/"
+clips_folder = data_folder + "clips/"
 model_name = "model_sentence_ja"
-block_length = 0.050#->500ms
-voice_max_length = int(10/block_length)#->2s
+block_length = 0.050#->50ms
+voice_max_length = int(10/block_length)#->10s
 print("voice_max_length:", voice_max_length)
+
 def audioToTensor(filepath):
     audio_binary = tf.io.read_file(filepath)
     audio, audioSR = tf.audio.decode_wav(audio_binary)
@@ -39,9 +42,9 @@ def audioToTensor(filepath):
         audio_clean = tf.concat([audio_clean, audio_slice], 0)
 
     if len(audio_clean)<audio_length*voice_max_length:
-        audio = tf.concat([np.zeros([audio_length*voice_max_length-len(audio_clean)]), audio], 0)
+        audio = tf.concat([np.zeros([audio_length*voice_max_length-len(audio_clean)]), audio_clean], 0)
     else:
-        audio = audio[-(audio_length*voice_max_length):]
+        audio = audio_clean[-(audio_length*voice_max_length):]
 
     spectrogram = tf.signal.stft(audio, frame_length=1024, frame_step=frame_step)
     spectrogram = (tf.math.log(tf.abs(tf.math.real(spectrogram)))/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
@@ -57,9 +60,8 @@ def audioToTensor(filepath):
         parts[i] = part
     return parts
 
-
-testParts = audioToTensor('clips/common_voice_ja_19482477.wav')
-print(testParts.shape)
+testParts = audioToTensor(os.path.join(clips_folder, 'common_voice_ja_19482477.wav'))
+print("Test shape", testParts.shape)
 
 def loadDataFromFile(filepath):
     dataVoice, dataString = [], []
@@ -77,11 +79,13 @@ def loadDataFromFile(filepath):
             continue
         print(row[1], row[2], wordList)
         string_max_lenght = max(len(wordList), string_max_lenght)
+
+        filename = row[1].replace(".mp3", '.wav')
         dataString.append(wordList)
-        dataVoice.append(row[1].replace(".mp3", '.wav'))
+        dataVoice.append(filename)
     return dataVoice, dataString, string_max_lenght
 
-dataVoice, dataString, string_max_lenght = loadDataFromFile('train.tsv')
+dataVoice, dataString, string_max_lenght = loadDataFromFile(os.path.join(data_folder, 'train.tsv'))
 
 print("voice_max_length: ", voice_max_length)
 print("string_max_lenght: ", string_max_lenght)
@@ -119,11 +123,13 @@ class MySequence(tf.keras.utils.Sequence):
     def __getitem__(self, idx):
         batch_x_string = self.x_string[idx * self.batch_size:(idx + 1) * self.batch_size]
         batch_y_string = self.y_string[idx * self.batch_size:(idx + 1) * self.batch_size]
-        batch_x_voice = []
+        batch_x_voice = np.zeros((self.batch_size, testParts.shape[0], testParts.shape[1], testParts.shape[2]))
         for i in range(0, batch_size):
-            voice = audioToTensor('clips/' + self.x_voice[idx * self.batch_size + i])
-            batch_x_voice.append(voice)
-        return [np.array(batch_x_voice), np.array(batch_x_string)], np.array(batch_y_string)
+            voice = audioToTensor(os.path.join(clips_folder, self.x_voice[idx * self.batch_size + i]))
+            batch_x_voice[i] = voice
+        batch_x_string = np.array(batch_x_string)
+        batch_y_string = np.array(batch_y_string)
+        return [batch_x_voice, batch_x_string], batch_y_string
 
 def word_for_id(integer, tokenizer):
     for word, index in tokenizer.word_index.items():
