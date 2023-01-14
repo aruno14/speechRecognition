@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 
 maxData = 30
 model_name = "model_sentence"
-data_folder = "fi/"
+data_folder = "fr/"
 clips_folder = data_folder + "clips/"
 block_length = 0.050#->500ms
 voice_max_length = int(8/block_length)#->8s
@@ -32,7 +32,7 @@ def audioToTensor(filepath:str):
 
     for i in range(0, len(audio), audio_length_clean):
         audio_slice = audio[i:i+audio_length_clean]
-        position = tfio.experimental.audio.trim(audio_slice, axis=0, epsilon=0.065)
+        position = tfio.audio.trim(audio_slice, axis=0, epsilon=0.065)
         start, stop=position[0], position[1]
         if stop-start<5:
             continue
@@ -58,7 +58,7 @@ def audioToTensor(filepath:str):
         parts[i] = part
     return parts
 
-testParts = audioToTensor(clips_folder+'common_voice_en_699711.wav')
+testParts = audioToTensor(clips_folder+'6fffa205a339c1719abbdd83d8bfd9b11f5f07ca3c8c47fa55fec0b16325c0b2cf6e00a28f416702d507d9a9be60318b18533c1e9b498bc7fb356dab97c039e9.wav')
 print(testParts.shape)
 
 def loadDataFromFile(filepath):
@@ -77,7 +77,8 @@ def loadDataFromFile(filepath):
         print(row[1], row[2], wordList)
         string_max_lenght = max(len(wordList), string_max_lenght)
         dataString.append(wordList)
-        dataVoice.append(row[1].replace(".mp3", '.wav'))
+        #dataVoice.append(row[1].replace(".mp3", '.wav'))
+        dataVoice.append(row[1] + '.wav')
     return dataVoice, dataString, string_max_lenght
 
 dataVoice, dataString, string_max_lenght = loadDataFromFile(data_folder+'train.tsv')

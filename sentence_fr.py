@@ -16,7 +16,7 @@ maxData = 30
 model_name = "model_sentence_fr"
 data_folder = "fr/"
 clips_folder = data_folder + "clips/"
-block_length = 0.050#->500ms
+block_length = 0.500#->500ms
 voice_max_length = int(8/block_length)#->8s
 print("voice_max_length:", voice_max_length)
 
@@ -31,7 +31,7 @@ def audioToTensor(filepath:str):
     audio_length_clean = audioSR//20#50ms
     for i in range(0, len(audio), audio_length_clean):
         audio_slice = audio[i:i+audio_length_clean]
-        position = tfio.experimental.audio.trim(audio_slice, axis=0, epsilon=0.065)
+        position = tfio.audio.trim(audio_slice, axis=0, epsilon=0.065)
         start, stop=position[0], position[1]
         if stop-start<5:
             continue
@@ -57,10 +57,11 @@ def audioToTensor(filepath:str):
         parts[i] = part
     return parts
 
-testParts = audioToTensor(os.path.join(clips_folder, 'common_voice_fr_19598904.wav'))
+testParts = audioToTensor(os.path.join(clips_folder, '6fffa205a339c1719abbdd83d8bfd9b11f5f07ca3c8c47fa55fec0b16325c0b2cf6e00a28f416702d507d9a9be60318b18533c1e9b498bc7fb356dab97c039e9.wav'))
 print(testParts.shape)
 
 def loadDataFromFile(filepath):
+    print("Load data from", filepath)
     dataVoice, dataString = [], []
     string_max_lenght = 0
     with open(filepath) as tsvfile:
@@ -76,7 +77,8 @@ def loadDataFromFile(filepath):
         print(row[1], row[2], wordList)
         string_max_lenght = max(len(wordList), string_max_lenght)
         dataString.append(wordList)
-        dataVoice.append(row[1].replace(".mp3", '.wav'))
+        #dataVoice.append(row[1].replace(".mp3", '.wav'))
+        dataVoice.append(row[1]+'.wav')
     return dataVoice, dataString, string_max_lenght
 
 dataVoice, dataString, string_max_lenght = loadDataFromFile(os.path.join(data_folder, 'train.tsv'))
@@ -135,7 +137,7 @@ if os.path.exists(model_name):
     print("Load: " + model_name)
     model = load_model(model_name)
 else:
-    latent_dim=64
+    latent_dim=256
     encoder_inputs = Input(shape=(testParts.shape[0], None, None, 1))
     preprocessing = TimeDistributed(preprocessing.Resizing(6, 129))(encoder_inputs)
     normalization = TimeDistributed(BatchNormalization())(preprocessing)
@@ -160,9 +162,9 @@ else:
     tf.keras.utils.plot_model(model, to_file='model_sentence.png', show_shapes=True)
     model.compile(optimizer='rmsprop', loss='categorical_crossentropy', metrics=['acc'])
 
-batch_size = 32
+batch_size = 16
 epochs = 30
-model.fit(MySequence(X_voice, X_string, Y_string, batch_size), epochs=epochs, steps_per_epoch=len(X_string)//batch_size)
+model.fit(MySequence(X_voice, X_string, Y_string, batch_size), epochs=epochs, batch_size=batch_size)
 #model.save_weights(model_name+'.h5')
 model.save(model_name)
 
@@ -201,7 +203,7 @@ def decode_sequence(input_seq):
     return decoded_sentence
 
 print("Test voice recognition")
-for test_path, test_string in [('common_voice_fr_19598904.wav', "L'endroit est recouvert de goyaviers et d'acacias non endémiques"), ('common_voice_fr_19598936.wav', 'La Foire sur la place décrit les début du compositeur à Paris'), ('common_voice_fr_20268897.wav', 'Quand il revient à Paris, deux ans plus tard, la pépinière a été détruite'), ('common_voice_fr_19999318.wav', "Peu de chansons de cet album n'ont pas connu de reprises"), ('common_voice_fr_19733071.wav', 'La série avait été diffusée par la télévision algérienne quelques mois auparavant')]:
+for test_path, test_string in [('6fffa205a339c1719abbdd83d8bfd9b11f5f07ca3c8c47fa55fec0b16325c0b2cf6e00a28f416702d507d9a9be60318b18533c1e9b498bc7fb356dab97c039e9.wav', "Ne prononcez pas devant nous le nom de cette femme monstrueuse."), ('common_voice_fr_19598936.wav', 'La Foire sur la place décrit les début du compositeur à Paris'), ('common_voice_fr_20268897.wav', 'Quand il revient à Paris, deux ans plus tard, la pépinière a été détruite'), ('common_voice_fr_19999318.wav', "Peu de chansons de cet album n'ont pas connu de reprises"), ('common_voice_fr_19733071.wav', 'La série avait été diffusée par la télévision algérienne quelques mois auparavant')]:
     print("test_string: ", test_string)
     test_voice = audioToTensor(clips_folder+test_path)
     print(np.array([test_voice]).shape)
