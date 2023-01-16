@@ -18,7 +18,7 @@ Simple LSTM model to predict next words of a sequence of words. It uses Mozilla 
 Seq2Seq model to translate sentence in same language as the input. It uses Mozilla Common Voice dataset labels file.
 
 ### test_words.py
-Simple LSTM model to convert audio into word. It uses **Speech command Dataset**: https://aiyprojects.withgoogle.com/open_speech_recording
+Simple LSTM model to convert audio into word. It uses **Speech command Dataset**: https://ai.googleblog.com/2017/08/launching-speech-commands-dataset.html
 
 #### test_wordsFr.py
 Simple LSTM model to convert audio into French word. It uses **a self-made Dataset** included in this repository.
