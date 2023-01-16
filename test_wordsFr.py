@@ -8,6 +8,7 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.keras import layers
 import matplotlib.pyplot as plt
 
+dataFolder="wordsFr"
 words = ['bonjour', 'salut', 'merci', 'aurevoir']
 block_length = 0.500#->500ms
 voice_max_length = int(1/block_length)#->2s
@@ -43,24 +44,20 @@ def audioToTensor(filepath):
         parts[i] = resized_part
     return parts
 
-max_data = 200
 wordToId, idToWord = {}, {}
-
 testParts = audioToTensor('wordsTestFr/bonjour-01.wav')
 print(testParts.shape)
+X_audio, Y_word = [], []
 
-files = {}
 for i, word in enumerate(words):
-    wordToId[word], idToWord[i] = i, word
-    files[word] = glob.glob('wordsFr/'+word+'/*.wav')
+    wordToId[word]=i
+    idToWord[i]=word
+    for file in glob.glob(dataFolder+"/"+word+'/*.wav'):
+        audio = audioToTensor(file)
+        X_audio.append(audio)
+        Y_word.append(np.array(to_categorical([i], num_classes=len(words))[0]))
 
-max_data = min(len(files["bonjour"]), max_data)
-X_audio, Y_word = np.zeros((max_data*len(words), testParts.shape[0], testParts.shape[1], testParts.shape[2])), np.zeros((max_data*len(words), len(words)))
-for nb in range(0, max_data):
-    for i, word in enumerate(words):
-        audio = audioToTensor(files[word][nb])
-        X_audio[len(files)*nb + i] = audio
-        Y_word[len(files)*nb + i] = np.array(to_categorical([i], num_classes=len(words))[0])
+X_audio, Y_word = np.asarray(X_audio), np.asarray(Y_word)
 
 X_audio_test, Y_word_test = X_audio[int(len(X_audio)*0.8):], Y_word[int(len(Y_word)*0.8):]
 X_audio, Y_word = X_audio[:int(len(X_audio)*0.8)], Y_word[:int(len(Y_word)*0.8)]
@@ -82,13 +79,13 @@ encoder_lstm = LSTM(units=latent_dim)(flatten)
 decoder_dense = Dense(len(words), activation='softmax')(encoder_lstm)
 model = Model(encoder_inputs, decoder_dense)
 model.compile(optimizer=tf.keras.optimizers.Adam(), loss='categorical_crossentropy', metrics=['acc'])
-model.summary(line_length=200)
+model.summary()
 
 tf.keras.utils.plot_model(model, to_file='model_wordFr.png', show_shapes=True)
 
 batch_size = 32
-epochs = 100
-history=model.fit(X_audio, Y_word, shuffle=False, batch_size=batch_size, epochs=epochs, steps_per_epoch=len(X_audio)*1.0//batch_size, validation_data=(X_audio_test, Y_word_test))
+epochs = 128
+history=model.fit(X_audio, Y_word, validation_data=(X_audio_test, Y_word_test), shuffle=False, batch_size=batch_size, epochs=epochs)
 model.save_weights('model_word_fr.h5')
 model.save("model_word_fr")
 
@@ -108,5 +105,5 @@ for test_path, test_string in [('wordsTestFr/bonjour-01.wav', 'bonjour'), ('word
     print("test_string: ", test_string)
     test_audio = audioToTensor(test_path)
     result = model.predict(np.array([test_audio]))
-    max = np.argmax(result)
-    print("decoded_sentence: ", result, max, idToWord[max])
+    maxValue = np.argmax(result)
+    print("decoded_sentence: ", result, maxValue, idToWord[maxValue])

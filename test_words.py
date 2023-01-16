@@ -1,5 +1,6 @@
 import numpy as np
 import glob
+import os
 import tensorflow as tf
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.layers import LSTM, Input, Dense, BatchNormalization, Conv2D, MaxPooling2D, Dropout, Flatten, TimeDistributed
@@ -8,9 +9,11 @@ from tensorflow.keras.utils import to_categorical
 from tensorflow.keras import layers
 import matplotlib.pyplot as plt
 
-words=['down', 'go', 'left', 'no', 'right', 'stop', 'up', 'yes']
+dataFolder = "mini_speech_commands/"
+#words=['down', 'go', 'left', 'no', 'right', 'stop', 'up', 'yes']
+words = [os.path.basename(x) for x in glob.glob('mini_speech_commands/*')]
 batch_size = 64
-epochs = 50
+epochs = 128
 frame_length = 512
 fft_size = int(frame_length//2+1)
 step_length = 0.008
@@ -43,22 +46,18 @@ def audioToTensor(filepath:str):
         parts[i] = resized_part
     return parts
 
-max_data = 900
 wordToId, idToWord = {}, {}
-testParts = audioToTensor('mini_speech_commands/go/0a9f9af7_nohash_0.wav')
+testParts = audioToTensor(dataFolder + 'go/0a9f9af7_nohash_0.wav')
 print(testParts.shape)
-X_audio, Y_word = np.zeros((max_data*8, testParts.shape[0], testParts.shape[1], testParts.shape[2])), np.zeros((max_data*8, 8))
+X_audio, Y_word = [], []
 
-files = {}
 for i, word in enumerate(words):
-    wordToId[word], idToWord[i] = i, word
-    files[word] = glob.glob('mini_speech_commands/'+word+'/*.wav')
+    for file in glob.glob(dataFolder+word+'/*.wav'):
+        audio = audioToTensor(file)
+        X_audio.append(audio)
+        Y_word.append(np.array(to_categorical([i], num_classes=len(words))[0]))
 
-for nb in range(0, max_data):
-    for i, word in enumerate(words):
-        audio = audioToTensor(files[word][nb])
-        X_audio[len(files)*nb + i] = audio
-        Y_word[len(files)*nb + i] = np.array(to_categorical([i], num_classes=len(words))[0])
+X_audio, Y_word = np.asarray(X_audio), np.asarray(Y_word)
 
 X_audio_test, Y_word_test = X_audio[int(len(X_audio)*0.8):], Y_word[int(len(Y_word)*0.8):]
 X_audio, Y_word = X_audio[:int(len(X_audio)*0.8)], Y_word[:int(len(Y_word)*0.8)]
@@ -83,7 +82,7 @@ model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['acc']
 model.summary()
 tf.keras.utils.plot_model(model, to_file='model_words.png', show_shapes=True)
 
-history=model.fit(X_audio, Y_word, shuffle=False, batch_size=batch_size, epochs=epochs, steps_per_epoch=len(X_audio)//batch_size, validation_data=(X_audio_test, Y_word_test))
+history=model.fit(X_audio, Y_word, shuffle=False, batch_size=batch_size, epochs=epochs, validation_data=(X_audio_test, Y_word_test))
 model.save_weights('model_words.h5')
 model.save("model_words")
 metrics = history.history
