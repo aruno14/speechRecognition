@@ -7,18 +7,23 @@ from tensorflow.keras.layers import LSTM, Input, Dense, BatchNormalization, Conv
 from tensorflow.keras.layers.experimental import preprocessing
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras import layers
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
+tf.config.set_visible_devices([], 'GPU')
+
 dataFolder = "mini_speech_commands/"
-#words=['down', 'go', 'left', 'no', 'right', 'stop', 'up', 'yes']
-words = [os.path.basename(x) for x in glob.glob('mini_speech_commands/*')]
-batch_size = 64
-epochs = 128
+words = [os.path.basename(x) for x in glob.glob(dataFolder + "*")]
+words.remove("_background_noise_")
+batch_size = 4
+epochs = 16
+block_length = 0.500#->500ms
+audio_max_length = int(2/block_length)#->2s
 frame_length = 512
 fft_size = int(frame_length//2+1)
 step_length = 0.008
-image_width = 128//4#128*0.008 = 1.024s
-audio_max_length = 1.5#1.5
+split_count = 7
+latent_dim=512
 
 def audioToTensor(filepath:str):
     audio_binary = tf.io.read_file(filepath)
@@ -36,41 +41,46 @@ def audioToTensor(filepath:str):
     spect_real = (tf.math.log(spect_real)/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
     spect_real = tf.where(tf.math.is_nan(spect_real), tf.zeros_like(spect_real), spect_real)
     spect_real = tf.where(tf.math.is_inf(spect_real), tf.zeros_like(spect_real), spect_real)
-    partsCount = len(spect_real)//(image_width//2)
-    parts = np.zeros((partsCount, image_width//2, fft_size//2))
-    for i, p in enumerate(range(0, len(spect_real)-image_width, image_width//2)):
-        part = spect_real[p:p+image_width]
-        part = tf.expand_dims(part, axis=-1)
-        resized_part = tf.image.resize(part, (image_width//2, fft_size//2))#We resize all to be more efficient
-        resized_part = tf.squeeze(resized_part, axis=-1)
-        parts[i] = resized_part
-    return parts
+    #spect_real = tf.image.resize(spect_real, (spect_real.shape[0]//2, spect_real.shape[1]//2))#We resize all to be more efficient
+    return spect_real
 
 wordToId, idToWord = {}, {}
-testParts = audioToTensor(dataFolder + 'go/0a9f9af7_nohash_0.wav')
-print(testParts.shape)
-X_audio, Y_word = [], []
+testParts = audioToTensor(os.path.join(dataFolder, 'go/0a9f9af7_nohash_0.wav'))
+print("Test", testParts.shape)
 
+X_audio, Y_word = [], []
 for i, word in enumerate(words):
-    for file in glob.glob(dataFolder+word+'/*.wav'):
-        audio = audioToTensor(file)
-        X_audio.append(audio)
+    for file in glob.glob(os.path.join(dataFolder, word) + '/*.wav'):
+        X_audio.append(file)
         Y_word.append(np.array(to_categorical([i], num_classes=len(words))[0]))
 
 X_audio, Y_word = np.asarray(X_audio), np.asarray(Y_word)
 
-X_audio_test, Y_word_test = X_audio[int(len(X_audio)*0.8):], Y_word[int(len(Y_word)*0.8):]
-X_audio, Y_word = X_audio[:int(len(X_audio)*0.8)], Y_word[:int(len(Y_word)*0.8)]
+class MySequence(tf.keras.utils.Sequence):
+    def __init__(self, x_audio, y_word, batch_size):
+        self.x_audio, self.y_word = x_audio, y_word
+        self.batch_size = batch_size
+
+    def __len__(self):
+        return len(self.x_audio) // self.batch_size
+
+    def __getitem__(self, idx):
+        batch_y = self.y_word[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_x = np.zeros((self.batch_size, testParts.shape[0], testParts.shape[1]))
+        for i in range(0, batch_size): 
+            batch_x[i] = audioToTensor(self.x_audio[idx * self.batch_size + i])
+        return batch_x, batch_y
+
+X_audio, X_audio_test, Y_word, Y_word_test = train_test_split(X_audio, Y_word)
 print("X_audio.shape: ", X_audio.shape)
 print("Y_word.shape: ", Y_word.shape)
 print("X_audio_test.shape: ", X_audio_test.shape)
 print("Y_word_test.shape: ", Y_word_test.shape)
 
-latent_dim=32
-encoder_inputs = Input(shape=(testParts.shape[0], None, None, 1))
-preprocessing = TimeDistributed(preprocessing.Resizing(testParts.shape[1]//2, testParts.shape[2]//2))(encoder_inputs)
-normalization = TimeDistributed(BatchNormalization())(preprocessing)
-conv2d = TimeDistributed(Conv2D(34, 3, activation='relu'))(normalization)
+encoder_inputs = Input(shape=(testParts.shape[0], testParts.shape[1]))
+normalization = BatchNormalization()(encoder_inputs)
+split = tf.keras.layers.Reshape((normalization.shape[1]//split_count, -1, normalization.shape[2], 1))(normalization)
+conv2d = TimeDistributed(Conv2D(34, 3, activation='relu'))(split)
 conv2d = TimeDistributed(Conv2D(64, 3, activation='relu'))(conv2d)
 maxpool = TimeDistributed(MaxPooling2D())(conv2d)
 dropout = TimeDistributed(Dropout(0.25))(maxpool)
@@ -82,8 +92,7 @@ model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['acc']
 model.summary()
 tf.keras.utils.plot_model(model, to_file='model_words.png', show_shapes=True)
 
-history=model.fit(X_audio, Y_word, shuffle=False, batch_size=batch_size, epochs=epochs, validation_data=(X_audio_test, Y_word_test))
-model.save_weights('model_words.h5')
+history=model.fit(MySequence(X_audio, Y_word, batch_size), shuffle=True, batch_size=batch_size, epochs=epochs, validation_data=MySequence(X_audio_test, Y_word_test, batch_size))
 model.save("model_words")
 metrics = history.history
 
@@ -93,7 +102,7 @@ plt.savefig("learning-words.png")
 plt.show()
 plt.close()
 
-score = model.evaluate(X_audio_test, Y_word_test, verbose = 0)
+score = model.evaluate(X_audio_test, Y_word_test, verbose=0)
 print('Test loss:', score[0])
 print('Test accuracy:', score[1])
 print("Test voice recognition")
@@ -102,5 +111,5 @@ for test_path, test_string in [('mini_speech_commands/go/0a9f9af7_nohash_0.wav',
     print("test_string: ", test_string)
     test_audio = audioToTensor(test_path)
     result = model.predict(np.array([test_audio]))
-    max = np.argmax(result)
-    print("decoded_sentence: ", result, max, idToWord[max])
+    maxIndex = np.argmax(result)
+    print("decoded_sentence: ", result, maxIndex, idToWord[maxIndex])

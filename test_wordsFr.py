@@ -2,47 +2,48 @@ import numpy as np
 import glob
 import tensorflow as tf
 from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.layers import LSTM, Input, Dense, BatchNormalization, Conv2D, MaxPooling2D, Dropout, Flatten, TimeDistributed
+from tensorflow.keras.layers import LSTM, GRU, Input, Dense, BatchNormalization, Conv2D, MaxPooling2D, Dropout, Flatten, TimeDistributed
 from tensorflow.keras.layers.experimental import preprocessing
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras import layers
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
+
+tf.config.set_visible_devices([], 'GPU')
 
 dataFolder="wordsFr"
 words = ['bonjour', 'salut', 'merci', 'aurevoir']
-block_length = 0.500#->500ms
-voice_max_length = int(1/block_length)#->2s
-frame_length = 512
-fft_size = int(frame_length//2+1)
-print("voice_max_length:", voice_max_length)
 
-def audioToTensor(filepath):
+latent_dim = 512
+batch_size = 32
+epochs = 64
+
+block_length = 0.500#->500ms
+audio_max_length = int(2/block_length)#->2s
+frame_length = 512
+step_length = 0.008
+split_count = 10
+fft_size = int(frame_length//2+1)
+print("audio_max_length:", audio_max_length)
+
+def audioToTensor(filepath:str):
     audio_binary = tf.io.read_file(filepath)
     audio, audioSR = tf.audio.decode_wav(audio_binary)
     audioSR = tf.get_static_value(audioSR)
     audio = tf.squeeze(audio, axis=-1)
-    audio_lenght = int(audioSR * block_length)#->16000*0.5=8000
-    frame_step = int(audioSR * 0.008)#16000*0.008=128
-    if len(audio)<audio_lenght*voice_max_length:
-        audio = tf.concat([np.zeros([audio_lenght*voice_max_length-len(audio)]), audio], 0)
+    frame_step = int(audioSR * step_length)#16000*0.008=128
+    if len(audio)<audioSR*audio_max_length:
+        audio = tf.concat([np.zeros([int(audioSR*audio_max_length)-len(audio)]), audio], 0)
     else:
-        audio = audio[-(audio_lenght*voice_max_length):]
+        audio = audio[-int(audioSR*audio_max_length):]
     spectrogram = tf.signal.stft(audio, frame_length=frame_length, frame_step=frame_step)
-    spectrogram = (tf.math.log(tf.abs(tf.math.real(spectrogram)))/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
-    spectrogram = tf.where(tf.math.is_nan(spectrogram), tf.zeros_like(spectrogram), spectrogram)
-    spectrogram = tf.where(tf.math.is_inf(spectrogram), tf.zeros_like(spectrogram), spectrogram)
-    voice_length, voice = 0, []
-    nb_part = len(audio)//audio_lenght
-    part_length = len(spectrogram)//nb_part
-    partsCount = len(range(0, len(spectrogram)-part_length, part_length//2))
-    parts = np.zeros((partsCount, part_length//2, fft_size//2))
-    for i, p in enumerate(range(0, len(spectrogram)-part_length, part_length//2)):
-        part = spectrogram[p:p+part_length]
-        part = tf.expand_dims(part, axis=-1)
-        resized_part = tf.image.resize(part, (part_length//2, fft_size//2))#We resize all to be more efficient
-        resized_part = tf.squeeze(resized_part, axis=-1)
-        parts[i] = resized_part
-    return parts
+    spect_real = tf.math.real(spectrogram)
+    spect_real = tf.abs(spect_real)
+    spect_real = (tf.math.log(spect_real)/tf.math.log(tf.constant(10, dtype=tf.float32))*20)-60
+    spect_real = tf.where(tf.math.is_nan(spect_real), tf.zeros_like(spect_real), spect_real)
+    spect_real = tf.where(tf.math.is_inf(spect_real), tf.zeros_like(spect_real), spect_real)
+    #spect_real = tf.image.resize(spect_real, (spect_real.shape[0]//2, spect_real.shape[1]//2))#We resize all to be more efficient
+    return spect_real
 
 wordToId, idToWord = {}, {}
 testParts = audioToTensor('wordsTestFr/bonjour-01.wav')
@@ -59,23 +60,23 @@ for i, word in enumerate(words):
 
 X_audio, Y_word = np.asarray(X_audio), np.asarray(Y_word)
 
-X_audio_test, Y_word_test = X_audio[int(len(X_audio)*0.8):], Y_word[int(len(Y_word)*0.8):]
-X_audio, Y_word = X_audio[:int(len(X_audio)*0.8)], Y_word[:int(len(Y_word)*0.8)]
+X_audio, X_audio_test, Y_word, Y_word_test = train_test_split(X_audio, Y_word)
 print("X_audio.shape: ", X_audio.shape)
 print("Y_word.shape: ", Y_word.shape)
 print("X_audio_test.shape: ", X_audio_test.shape)
 print("Y_word_test.shape: ", Y_word_test.shape)
 
-latent_dim=32
-encoder_inputs = Input(shape=(testParts.shape[0], testParts.shape[1], testParts.shape[2], 1))
-#preprocessing = TimeDistributed(preprocessing.Resizing(6, 129))(encoder_inputs)
-normalization = TimeDistributed(BatchNormalization())(encoder_inputs)
-conv2d = TimeDistributed(Conv2D(34, 3, activation='relu'))(normalization)
+encoder_inputs = Input(shape=(testParts.shape[0], testParts.shape[1]))
+#preprocessing = preprocessing.Resizing(6, 129)(encoder_inputs)
+normalization = BatchNormalization()(encoder_inputs)
+split = tf.keras.layers.Reshape((normalization.shape[1]//split_count, -1, normalization.shape[2], 1))(normalization)
+print(split.shape)
+conv2d = TimeDistributed(Conv2D(34, 3, activation='relu'))(split)
 conv2d = TimeDistributed(Conv2D(64, 3, activation='relu'))(conv2d)
 maxpool = TimeDistributed(MaxPooling2D())(conv2d)
 dropout = TimeDistributed(Dropout(0.25))(maxpool)
 flatten = TimeDistributed(Flatten())(dropout)
-encoder_lstm = LSTM(units=latent_dim)(flatten)
+encoder_lstm = GRU(units=latent_dim)(flatten)
 decoder_dense = Dense(len(words), activation='softmax')(encoder_lstm)
 model = Model(encoder_inputs, decoder_dense)
 model.compile(optimizer=tf.keras.optimizers.Adam(), loss='categorical_crossentropy', metrics=['acc'])
@@ -83,10 +84,7 @@ model.summary()
 
 tf.keras.utils.plot_model(model, to_file='model_wordFr.png', show_shapes=True)
 
-batch_size = 32
-epochs = 128
-history=model.fit(X_audio, Y_word, validation_data=(X_audio_test, Y_word_test), shuffle=False, batch_size=batch_size, epochs=epochs)
-model.save_weights('model_word_fr.h5')
+history=model.fit(X_audio, Y_word, validation_data=(X_audio_test, Y_word_test), shuffle=True, batch_size=batch_size, epochs=epochs)
 model.save("model_word_fr")
 
 metrics = history.history
