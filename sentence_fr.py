@@ -47,8 +47,20 @@ def audioToTensor(filepath:str):
     spectrogram = tf.where(tf.math.is_inf(spectrogram), tf.zeros_like(spectrogram), spectrogram)
     return spectrogram
 
-testParts = audioToTensor(os.path.join(clips_folder, '6fffa205a339c1719abbdd83d8bfd9b11f5f07ca3c8c47fa55fec0b16325c0b2cf6e00a28f416702d507d9a9be60318b18533c1e9b498bc7fb356dab97c039e9.wav'))
-print("testParts", testParts.shape)
+def sampleFromFile(filepath):
+    print("Load data from", filepath)
+    with open(filepath) as tsvfile:
+      reader = csv.reader(tsvfile, delimiter='\t')
+      next(reader)#skip header
+      for row in reader:
+        sentence = row[2].replace(".", "")
+        wordList = ("start " + sentence + " end").split(" ")
+        if(len(wordList)<5):
+            continue
+        return row[1]+".wav"
+
+samplePath = sampleFromFile(os.path.join(data_folder, 'train.tsv'))
+testParts = audioToTensor(os.path.join(clips_folder, samplePath))print("testParts", testParts.shape)
 
 def loadDataFromFile(filepath):
     print("Load data from", filepath)
